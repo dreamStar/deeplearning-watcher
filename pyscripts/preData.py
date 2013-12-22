@@ -53,6 +53,8 @@ class PreImageData:
             test_set_y[i] = imageio.images[index[i]].lindex 
         self.test_set = (test_set_x,test_set_y)
         
+class PreImageData_MNIST(PreImageData):
+    def get_data_set(self,classes,train_set_num,valid_set_num,test_set_num):
         
         
 class PreImageData_ExYaleB(PreImageData):

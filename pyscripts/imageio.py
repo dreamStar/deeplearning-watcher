@@ -9,14 +9,20 @@ import matplotlib.pyplot as plt
 import numpy as np
 import os as os
 import shelve
+import gzip
+import cPickle
 
 class ImageData:
     def __init__(self):
         self.data = np.ndarray((0,0))
         self.size = (0,0)
+        #all the meta information of this image.
         self.info = {}
+        #every image has its unique id
         self.id = -1
+        #image file name
         self.name = ""
+        #label index of this image.label may not be continuous integers,but index is.
         self.lindex = -1
         
 class Label_converter:
@@ -26,18 +32,19 @@ class Label_converter:
     def clear(self):
         self.label2lindex = {}
         self.lindex2label = {}
-        self.catalog_num = 0
-        
+        #the sum of categories
+        self.category_num = 0
+    
     def get_lindex(self,label):
         if label in self.label2lindex:
             return self.label2lindex[label]
         else:
-            self.label2lindex[label] = self.catalog_num
-            self.lindex2label[self.catalog_num] = label
+            self.label2lindex[label] = self.category_num
+            self.lindex2label[self.category_num] = label
             
-            self.catalog_num += 1
+            self.category_num += 1
            
-            return self.catalog_num - 1
+            return self.category_num - 1
             
     def get_label(self,lindex):
         if lindex in self.lindex2label:
@@ -45,8 +52,6 @@ class Label_converter:
         else:
             return ""
             
-            
-    
     
 class ImageIO:
     
@@ -57,9 +62,11 @@ class ImageIO:
         self.basename = ""
         self.label_converter = Label_converter()
         
-    def labelParse_exyaleb(self,name):
-        ptr = name.find("B")
-        return name[ptr+1:ptr+3]
+    def infoParse(self,name):
+        pass
+    
+    def labelParse(self,name):
+        pass
         
     def loadImage(self,path,indexList,imagesize):
         if not os.path.exists(path):
@@ -71,10 +78,10 @@ class ImageIO:
             if imagesize != data.data.shape:
                 return False
             data.name = os.path.basename(path)
-            data.info = self.infoParse_exyaleb(data.name)
+            data.info = self.infoParse(data.name)
             data.size = data.data.shape
             data.id = self.imageNumbers
-            data.lindex = self.label_converter.get_lindex(self.labelParse_exyaleb(data.name))
+            data.lindex = self.label_converter.get_lindex(self.labelParse(data.name))
        
             indexList.append(data.id)
             self.images.append(data)
@@ -83,8 +90,30 @@ class ImageIO:
         except IOError:
             print(path)
             return False
+    
+    def loadbase(self,name):
+        pass
+    
+    
+    def storeData(self,name):
+        db = shelve.open("imageDataBases")
+        db[name+"imageNum"] = self.imageNumbers
+        db[name+"images"] = self.images
+        db.close
+    
+    def restoreData(self,name):
+        db = shelve.open("imageDataBases")
+        if not name in db.keys():
+            return
+        self.imageNumbers = db[name+"imageNum"]
+        self.images = db[name+"images"]
         
-    def infoParse_exyaleb(self,name):
+class ImageIO_exyale(ImageIO):
+    def labelParse(self,name):
+        ptr = name.find("B")
+        return name[ptr+1:ptr+3]
+        
+    def infoParse(self,name):
         ptr = name.find("B")
         person = name[ptr+1:ptr+3]
         ptr = name.find("P")
@@ -110,7 +139,7 @@ class ImageIO:
         infoDic["e"] = e
         return infoDic
         
-    def loadbase_exyaleb(self,path):
+    def loadbase(self,path):
         if not (path.endswith("\\") or path.endswith("/")):
             path += "/"
         self.label_converter.clear()
@@ -129,7 +158,7 @@ class ImageIO:
                     self.loadImage(imagePath,indexList,(480,640))
                 f.close
                 
-            self.classDic[self.label_converter.get_lindex(i)] = indexList  
+            self.classDic[self.label_converter.get_lindex(i)] = indexList 
             
     def loadbase_croppedyaleb(self,path):
         if not (path.endswith("\\") or path.endswith("/")):
@@ -143,6 +172,27 @@ class ImageIO:
             dicPath1 = "yaleB" + i + "/"
             dicPath1 = path + dicPath1
             dicPath = dicPath1 + "yaleB"+str(i)
+        if not os.path.exists(path):
+            return False
+        data = ImageData()
+        
+        try:
+            data.data = plt.imread(path)
+            if imagesize != data.data.shape:
+                return False
+            data.name = os.path.basename(path)
+            data.info = self.infoParse_exyaleb(data.name)
+            data.size = data.data.shape
+            data.id = self.imageNumbers
+            data.lindex = self.label_converter.get_lindex(self.labelParse_exyaleb(data.name))
+       
+            indexList.append(data.id)
+            self.images.append(data)
+            self.imageNumbers += 1
+            return True
+        except IOError:
+            print(path)
+            return False
             
             infoFile = dicPath + "_P00.info"
             f = open(infoFile)
@@ -150,21 +200,32 @@ class ImageIO:
                 imagePath = dicPath1 + imagePath[:-1]
                 self.loadImage(imagePath,indexList,(192,168))
             f.close
-            self.classDic[self.label_converter.get_lindex(i)] = indexList              
+            self.classDic[self.label_converter.get_lindex(i)] = indexList 
+ 
+class ImageIO_mnist(ImageIO):
     
-    def storeData(self,name):
-        db = shelve.open("imageDataBases")
-        db[name+"imageNum"] = self.imageNumbers
-        db[name+"images"] = self.images
-        db.close
+    def parseDataSet(self,dataset):
+        data,label = dataset
+        im = ImageData()
+        for i in range(len(label)):
+            im.data = reshape(data[i],(28,28))
+            im.id = self.imageNumbers
+            im.lindex = label[i]
+            im.info["label"] = label[i]
+            im.name = im.id
+            im.size = (28,28)
+        return im
+        
     
-    def restoreData(self,name):
-        db = shelve.open("imageDataBases")
-        if not name in db.keys():
-            return
-        self.imageNumbers = db[name+"imageNum"]
-        self.images = db[name+"images"]
-                
+    def loadbase(self,path):
+        if not (path.endswith("\\") or path.endswith("/")):
+            path += "/"
+        self.label_converter.clear()
+        
+        f = gzip.open(path,'rb')
+        train_set,valid_set,test_set = cPickle.load(f)
+        
+               
 #if __name__ == "__main__":
     #imageio = ImageIO()
     #imageio.loadbase_exyaleb(r"Z:\share\databases\ExtendedYaleB")
