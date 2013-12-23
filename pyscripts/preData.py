@@ -14,7 +14,7 @@ class PreImageData:
     
     def __init__(self,imageio = 0):
         if imageio == 0:
-            self.imageio = imio.ImageIO();
+            self.imageio = imio.ImageIO_exyaleb();
         else:
             self.imageio = imageio
 
@@ -53,13 +53,31 @@ class PreImageData:
             test_set_y[i] = imageio.images[index[i]].lindex 
         self.test_set = (test_set_x,test_set_y)
         
-class PreImageData_MNIST(PreImageData):
-    def get_data_set(self,classes,train_set_num,valid_set_num,test_set_num):
-        
         
 class PreImageData_ExYaleB(PreImageData):
+    
+    def __init__(self,imageio = 0):
+        if imageio == 0:
+            self.imageio = imio.ImageIO_exyaleb();
+        else:
+            self.imageio = imageio
             
     def get_data_set(self,classes,train_set_num,valid_set_num,test_set_num):
+        """
+        get train,valid,test sets.
+        
+        :type classes:list
+        :param classes:the categories you want to use
+        
+        :type train_set_num:int
+        :param train_set_num:the number of samples of ONE category in train set
+        
+        :type train_set_num:int
+        :param train_set_num:the number of samples of ONE category in valid set
+        
+        :type train_set_num:int
+        :param train_set_num:the number of samples of ONE category in test set
+        """
         train_index = []
         valid_index = []
         test_index = []
@@ -86,9 +104,28 @@ class PreImageData_ExYaleB(PreImageData):
         
     def load_data(self,classes,train_set_num,valid_set_num,test_set_num,dataset = 0):
         if dataset != 0:
-            #self.imageio.loadbase_exyaleb(dataset)
+            #self.imageio.loadbase(dataset)
             self.imageio.loadbase_croppedyaleb(dataset)
         self.get_data_set(classes,train_set_num,valid_set_num,test_set_num)
+        return (self.train_set,self.valid_set,self.test_set)
+        
+class PreImageData_mnist(PreImageData):
+    
+    def __init__(self,imageio = 0):
+        if imageio == 0:
+            self.imageio = imio.ImageIO_mnist();
+        else:
+            self.imageio = imageio      
+            
+    def get_data_set(self,train_set_num = -1,valid_set_num = -1,test_set_num = -1):
+        self.pre_train_set(self.imageio,self.imageio.train_index,len(self.imageio.train_index))
+        self.pre_valid_set(self.imageio,self.imageio.valid_index,len(self.imageio.valid_index))
+        self.pre_test_set(self.imageio,self.imageio.test_index,len(self.imageio.test_index))
+    
+    def load_data(self,train_set_num = -1,valid_set_num = -1,test_set_num = -1,dataset = 0):
+        if dataset != 0:
+            self.imageio.loadbase(dataset)
+        self.get_data_set(train_set_num,valid_set_num,test_set_num)
         return (self.train_set,self.valid_set,self.test_set)
         
 if __name__ == "__main__":

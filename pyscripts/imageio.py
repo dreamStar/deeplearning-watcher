@@ -108,7 +108,7 @@ class ImageIO:
         self.imageNumbers = db[name+"imageNum"]
         self.images = db[name+"images"]
         
-class ImageIO_exyale(ImageIO):
+class ImageIO_exyaleb(ImageIO):
     def labelParse(self,name):
         ptr = name.find("B")
         return name[ptr+1:ptr+3]
@@ -207,24 +207,31 @@ class ImageIO_mnist(ImageIO):
     def parseDataSet(self,dataset):
         data,label = dataset
         im = ImageData()
+        images = []
+        labels = []
+        imageIndex = []
         for i in range(len(label)):
-            im.data = reshape(data[i],(28,28))
+            im.data = np.reshape(data[i],(28,28))
             im.id = self.imageNumbers
             im.lindex = label[i]
             im.info["label"] = label[i]
             im.name = im.id
             im.size = (28,28)
-        return im
+            self.imageNumbers += 1
+            self.images.append(im)
+            images.append(im.data)
+            labels.append(im.lindex)
+            imageIndex.append(im.id)
+        return ((images,labels),imageIndex)
         
     
     def loadbase(self,path):
-        if not (path.endswith("\\") or path.endswith("/")):
-            path += "/"
         self.label_converter.clear()
-        
-        f = gzip.open(path,'rb')
+        f = gzip.open(path)
         train_set,valid_set,test_set = cPickle.load(f)
-        
+        self.train_set,self.train_index = self.parseDataSet(train_set)
+        self.valid_set,self.valid_index = self.parseDataSet(valid_set)
+        self.test_set,self.test_index = self.parseDataSet(test_set)
                
 #if __name__ == "__main__":
     #imageio = ImageIO()

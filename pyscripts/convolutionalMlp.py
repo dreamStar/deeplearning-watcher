@@ -123,10 +123,17 @@ class LeNetConvPoolLayer(object):
         """
 
 class CNN:
-    def __init__(self):
-        self.srcdata = preData.PreImageData_ExYaleB()  
-    def load_data(self ,dataset=r"Z:\share\databases\CroppedYale\CroppedYale"):
-        self.srcdata.load_data([0,1,2,3,4,5,6],20,20,10,dataset)
+    def __init__(self,databasetype = "mnist"):
+        self.dataBaseType = databasetype
+        if(databasetype == "mnist"):
+            self.srcdata = preData.PreImageData_mnist()
+        else:
+            self.srcdata = preData.PreImageData_ExYaleB()
+    def load_data(self ,dataset=r"Z:\share\databases\mnist\mnist.pkl.gz"):
+        if self.dataBaseType == "mnist":
+            self.srcdata.load_data(dataset = dataset)
+        else:
+            self.srcdata.load_data([0,1,2,3,4,5,6],20,20,10,dataset)
         def shared_dataset(data_xy, borrow=True):
             """ Function that loads the dataset into shared variables
 
@@ -194,7 +201,7 @@ class CNN:
         self.layer0.W = self.layer0.params[0]
         self.layer0.b = self.layer0.params[1]
      
-    def build_model_functions(self,learning_rate=0.1,image_shape = (192,168),nkerns=[20, 50,5000],filters_shape=[[23,29],[5,4]],pools_shape=[[10,10],[2,2]],catalog_num = 2):
+    def build_model_functions(self,learning_rate=0.1,image_shape = (28,28),nkerns=[20, 50,200],filters_shape=[[10,10],[2,2]],pools_shape=[[5,5],[2,2]],catalog_num = 10):
         rng = numpy.random.RandomState(23455)        
         index = T.lscalar()  # index to a [mini]batch
         x = T.matrix('x')   # the data is presented as rasterized images
@@ -608,6 +615,9 @@ class CNN:
 
 if __name__ == '__main__':
     cnn = CNN()
+    cnn.load_data()
+    cnn.make_minibatch(20)
+    cnn.build_model_functions()
     #cnn.load_data()
     #cnn.evaluate_lenet5()
 
