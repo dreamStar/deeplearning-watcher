@@ -206,11 +206,12 @@ class ImageIO_mnist(ImageIO):
     
     def parseDataSet(self,dataset):
         data,label = dataset
-        im = ImageData()
+        
         images = []
         labels = []
         imageIndex = []
         for i in range(len(label)):
+            im = ImageData()
             im.data = np.reshape(data[i],(28,28))
             im.id = self.imageNumbers
             im.lindex = label[i]
