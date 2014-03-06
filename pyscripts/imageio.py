@@ -201,6 +201,27 @@ class ImageIO_exyaleb(ImageIO):
                 self.loadImage(imagePath,indexList,(192,168))
             f.close
             self.classDic[self.label_converter.get_lindex(i)] = indexList 
+
+
+def ndarray_shape_change(src,size):
+    scalrow = float(src.shape[0]) / size[0]
+    scalcol = float(src.shape[1]) / size[1]
+    newim = ndarray(size,src.dtype)
+    for i in xrange(size[0]):
+        for j in xrange(size[1]):
+            m = floor(scalrow * i)
+            u = scalrow * i - m
+            n = floor(scalcol * j)
+            v = scalcol * j - n
+            if m == src.shape[0] -1 and n == src.shape[1] -1:
+                newim[i][j] = (1-u)*(1-v)*src[m][n]
+            elif m == src.shape[0] -1:
+                newim[i][j] = (1-u)*(1-v)*src[m][n] + (1-u)*v*src[m][n+1]
+            elif n == src.shape[1] -1:
+                newim[i][j] = (1-u)*(1-v)*src[m][n] + (1-v)*u*src[m+1][n]
+            else:
+                newim[i][j] = (1-u)*(1-v)*src[m][n] + (1-u)*v*src[m][n+1] + u*(1-v)*src[m+1][n]+u*v*src[m+1][n+1]
+    return newim
  
 class ImageIO_mnist(ImageIO):
     
