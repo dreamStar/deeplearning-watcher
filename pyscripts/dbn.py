@@ -23,7 +23,7 @@ from logisticSgd import LogisticRegression, load_data
 from mlp import HiddenLayer
 from rbm import RBM
 
-
+isdebug = True
 class DBN(object):
     """Deep Belief Network
 
@@ -268,12 +268,20 @@ class run_dbn(object):
     def pre_data(self,dataset = 'Z:\share\databases\mnist\mnist.pkl.gz',batch_size = 10):
         self.datasets = load_data(dataset)
         self.batch_size = batch_size;
-        self.train_set_x, self.train_set_y = datasets[0]
-        self.valid_set_x, self.valid_set_y = datasets[1]
-        self.test_set_x, self.test_set_y = datasets[2]
+        self.train_set_x, self.train_set_y = self.datasets[0]
+        self.valid_set_x, self.valid_set_y = self.datasets[1]
+        self.test_set_x, self.test_set_y = self.datasets[2]
+        
+        if isdebug:
+            self.train_set_x.set_value(self.train_set_x.get_value()[0:100])
+            #self.train_set_y.set_value(self.train_set_y.get_value()[0:100])
+            self.valid_set_x.set_value(self.valid_set_x.get_value()[0:100])
+            #self.valid_set_y.set_value(self.valid_set_y.get_value()[0:100])
+            self.test_set_x.set_value(self.test_set_x.get_value()[0:100])
+            #self.test_set_y.set_value(self.test_set_y.get_value()[0:100])
     
         # compute number of minibatches for training, validation and testing
-        self.n_train_batches = train_set_x.get_value(borrow=True).shape[0] / batch_size
+        self.n_train_batches = self.train_set_x.get_value(borrow=True).shape[0] / batch_size
     
     def make_fun(self):
         # numpy random generator
@@ -283,12 +291,14 @@ class run_dbn(object):
         self.dbn = DBN(numpy_rng=numpy_rng, n_ins=28 * 28,
                   hidden_layers_sizes=[1000, 1000, 1000],
                   n_outs=10)
+                  
+        
     
     def pre_train(self,pretraining_epochs = 50,
                  pretrain_lr=0.01, k=1):
         print '... getting the pretraining functions'
-        pretraining_fns = self.dbn.pretraining_functions(train_set_x=train_set_x,
-                                                    batch_size=batch_size,
+        pretraining_fns = self.dbn.pretraining_functions(train_set_x=self.train_set_x,
+                                                    batch_size=self.batch_size,
                                                     k=k)
     
         print '... pre-training the model'
@@ -299,7 +309,7 @@ class run_dbn(object):
             for epoch in xrange(pretraining_epochs):
                 # go through the training set
                 c = []
-                for batch_index in xrange(n_train_batches):
+                for batch_index in xrange(self.n_train_batches):
                     c.append(pretraining_fns[i](index=batch_index,
                                                 lr=pretrain_lr))
                 print 'Pre-training layer %i, epoch %d, cost ' % (i, epoch),
@@ -307,8 +317,80 @@ class run_dbn(object):
         #end_time = time.clock()
 
 
-    def train(self):
-        
+    def train(self,finetune_lr=0.1,training_epochs=50):
+        print '... getting the finetuning functions'
+        self.train_fn, self.validate_model, self.test_model = self.dbn.build_finetune_functions(
+                    datasets=self.datasets, batch_size=self.batch_size,
+                    learning_rate=finetune_lr)
+    
+        print '... finetunning the model'
+        # early-stopping parameters
+        patience = 4 * self.n_train_batches  # look as this many examples regardless
+        patience_increase = 2.    # wait this much longer when a new best is
+                                  # found
+        improvement_threshold = 0.995  # a relative improvement of this much is
+                                       # considered significant
+        validation_frequency = min(self.n_train_batches, patience / 2)
+                                      # go through this many
+                                      # minibatche before checking the network
+                                      # on the validation set; in this case we
+                                      # check every epoch
+    
+        best_params = None
+        best_validation_loss = numpy.inf
+        test_score = 0.
+        start_time = time.clock()
+    
+        done_looping = False
+        epoch = 0
+    
+        while (epoch < training_epochs) and (not done_looping):
+            epoch = epoch + 1
+            for minibatch_index in xrange(self.n_train_batches):
+    
+                minibatch_avg_cost = self.train_fn(minibatch_index)
+                iter = (epoch - 1) * self.n_train_batches + minibatch_index
+    
+                if (iter + 1) % validation_frequency == 0:
+    
+                    validation_losses = self.validate_model()
+                    this_validation_loss = numpy.mean(validation_losses)
+                    print('epoch %i, minibatch %i/%i, validation error %f %%' % \
+                          (epoch, minibatch_index + 1, self.n_train_batches,
+                           this_validation_loss * 100.))
+    
+                    # if we got the best validation score until now
+                    if this_validation_loss < best_validation_loss:
+    
+                        #improve patience if loss improvement is good enough
+                        if (this_validation_loss < best_validation_loss *
+                            improvement_threshold):
+                            patience = max(patience, iter * patience_increase)
+    
+                        # save best validation score and iteration number
+                        best_validation_loss = this_validation_loss
+                        best_iter = iter
+    
+                        # test it on the test set
+                        test_losses = self.test_model()
+                        test_score = numpy.mean(test_losses)
+                        print(('     epoch %i, minibatch %i/%i, test error of '
+                               'best model %f %%') %
+                              (epoch, minibatch_index + 1, self.n_train_batches,
+                               test_score * 100.))
+    
+                if patience <= iter:
+                    done_looping = True
+                    break
+        end_time = time.clock()
+        print(('Optimization complete with best validation score of %f %%,'
+               'with test performance %f %%') %
+                     (best_validation_loss * 100., test_score * 100.))
+        print >> sys.stderr, ('The fine tuning code for file ' +
+                              os.path.split(__file__)[1] +
+                              ' ran for %.2fm' % ((end_time - start_time)
+                                                  / 60.))
+
 
 def test_DBN(finetune_lr=0.1, pretraining_epochs=50,
              pretrain_lr=0.01, k=1, training_epochs=50,
@@ -459,4 +541,5 @@ def test_DBN(finetune_lr=0.1, pretraining_epochs=50,
 
 
 if __name__ == '__main__':
-    test_DBN()
+    #test_DBN()
+    pass
