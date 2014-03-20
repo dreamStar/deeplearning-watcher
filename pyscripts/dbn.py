@@ -386,11 +386,12 @@ class run_dbn(object):
         print(('Optimization complete with best validation score of %f %%,'
                'with test performance %f %%') %
                      (best_validation_loss * 100., test_score * 100.))
+        """             
         print >> sys.stderr, ('The fine tuning code for file ' +
                               os.path.split(__file__)[1] +
                               ' ran for %.2fm' % ((end_time - start_time)
                                                   / 60.))
-
+        """
 
 def test_DBN(finetune_lr=0.1, pretraining_epochs=50,
              pretrain_lr=0.01, k=1, training_epochs=50,
