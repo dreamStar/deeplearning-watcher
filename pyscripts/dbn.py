@@ -35,8 +35,9 @@ class DBN(object):
     regression layer on top.
     """
 
-    def __init__(self, numpy_rng, theano_rng=None, n_ins=784,
-                 hidden_layers_sizes=[500, 500], n_outs=10):
+    def __init__(self, numpy_rng, theano_rng=None, n_ins=784,first_layer_size = 500,
+                 hidden_layers_sizes1=[500],
+                hidden_layers_sizes2 = [500], n_outs1=10,n_outs2=5):
         """This class is made to support a variable number of layers.
 
         :type numpy_rng: numpy.random.RandomState
@@ -58,21 +59,25 @@ class DBN(object):
         :param n_outs: dimension of the output of the network
         """
 
-        self.sigmoid_layers = []
-        self.rbm_layers = []
+        self.sigmoid_layers1 = []
+        self.sigmoid_layers2 = []
+        self.rbm_layers1 = []
+        self.rbm_layers2 = []
         self.params = []
-        self.n_layers = len(hidden_layers_sizes)
+        self.n_layers1 = len(hidden_layers_sizes1)
+        self.n_layers2 = len(hidden_layers_sizes2) 
 
-        assert self.n_layers > 0
+        assert self.n_layers1 > 0 or self.n_layers2 > 0
 
         if not theano_rng:
             theano_rng = RandomStreams(numpy_rng.randint(2 ** 30))
 
         # allocate symbolic variables for the data
         self.x = T.matrix('x')  # the data is presented as rasterized images
-        self.y = T.ivector('y')  # the labels are presented as 1D vector
+        self.y1 = T.ivector('y1')
+        self.y2 = T.ivector('y2')# the labels are presented as 1D vector
                                  # of [int] labels
-
+        self.field = T.scal('field')
         # The DBN is an MLP, for which all weights of intermediate
         # layers are shared with a different RBM.  We will first
         # construct the DBN as a deep multilayer perceptron, and when
@@ -82,34 +87,48 @@ class DBN(object):
         # weights of the MLP as well) During finetuning we will finish
         # training the DBN by doing stochastic gradient descent on the
         # MLP.
-
-        for i in xrange(self.n_layers):
+        
+        self.first_sigmoid_layer = HiddenLayer(rng=numpy_rng,
+                                        input=self.x,
+                                        n_in=n_ins,
+                                        n_out=first_layer_size,
+                                        activation=T.nnet.sigmoid)
+                                        
+        self.first_logLayer = LogisticRegression(
+            input = self.first_sigmoid_layer.output,
+            n_in = n_ins,
+            n_out = 2)   
+            
+        self.first_finetune_cost = self.first_logLayer.negative_log_likelihood(self.field)
+        self.errors_field = self.first_logLayer.errors(self.field)
+        
+        for i in xrange(self.n_layers1):
             # construct the sigmoidal layer
 
             # the size of the input is either the number of hidden
             # units of the layer below or the input size if we are on
             # the first layer
             if i == 0:
-                input_size = n_ins
+                input_size = first_layer_size
             else:
-                input_size = hidden_layers_sizes[i - 1]
+                input_size = hidden_layers_sizes1[i]
 
             # the input to this layer is either the activation of the
             # hidden layer below or the input of the DBN if you are on
             # the first layer
             if i == 0:
-                layer_input = self.x
+                layer_input = self.first_sigmoid_layer
             else:
-                layer_input = self.sigmoid_layers[-1].output
+                layer_input = self.sigmoid_layers1[-1].output
 
             sigmoid_layer = HiddenLayer(rng=numpy_rng,
                                         input=layer_input,
                                         n_in=input_size,
-                                        n_out=hidden_layers_sizes[i],
+                                        n_out=hidden_layers_sizes1[i],
                                         activation=T.nnet.sigmoid)
 
             # add the layer to our list of layers
-            self.sigmoid_layers.append(sigmoid_layer)
+            self.sigmoid_layers1.append(sigmoid_layer)
 
             # its arguably a philosophical question...  but we are
             # going to only declare that the parameters of the
@@ -123,26 +142,83 @@ class DBN(object):
                             theano_rng=theano_rng,
                             input=layer_input,
                             n_visible=input_size,
-                            n_hidden=hidden_layers_sizes[i],
+                            n_hidden=hidden_layers_sizes1[i],
                             W=sigmoid_layer.W,
                             hbias=sigmoid_layer.b)
-            self.rbm_layers.append(rbm_layer)
+            self.rbm_layers1.append(rbm_layer)
+            
+         
+            
+        
+        for i in xrange(self.n_layers2):
+            # construct the sigmoidal layer
+
+            # the size of the input is either the number of hidden
+            # units of the layer below or the input size if we are on
+            # the first layer
+            if i == 0:
+                input_size = first_layer_size
+            else:
+                input_size = hidden_layers_sizes2[i-1]
+
+            # the input to this layer is either the activation of the
+            # hidden layer below or the input of the DBN if you are on
+            # the first layer
+            if i == 0:
+                layer_input = self.first_sigmoid_layer
+            else:
+                layer_input = self.sigmoid_layers2[-1].output
+
+            sigmoid_layer = HiddenLayer(rng=numpy_rng,
+                                        input=layer_input,
+                                        n_in=input_size,
+                                        n_out=hidden_layers_sizes2[i],
+                                        activation=T.nnet.sigmoid)
+
+            # add the layer to our list of layers
+            self.sigmoid_layers2.append(sigmoid_layer)
+
+            # its arguably a philosophical question...  but we are
+            # going to only declare that the parameters of the
+            # sigmoid_layers are parameters of the DBN. The visible
+            # biases in the RBM are parameters of those RBMs, but not
+            # of the DBN.
+            self.params.extend(sigmoid_layer.params)
+
+            # Construct an RBM that shared weights with this layer
+            rbm_layer = RBM(numpy_rng=numpy_rng,
+                            theano_rng=theano_rng,
+                            input=layer_input,
+                            n_visible=input_size,
+                            n_hidden=hidden_layers_sizes2[i],
+                            W=sigmoid_layer.W,
+                            hbias=sigmoid_layer.b)
+            self.rbm_layers2.append(rbm_layer)
 
         # We now need to add a logistic layer on top of the MLP
-        self.logLayer = LogisticRegression(
-            input=self.sigmoid_layers[-1].output,
-            n_in=hidden_layers_sizes[-1],
-            n_out=n_outs)
+        
+        self.logLayer1 = LogisticRegression(
+            input=self.sigmoid_layers1[-1].output,
+            n_in=hidden_layers_sizes1[-1],
+            n_out=n_outs1)
+        self.params.extend(self.logLayer.params)
+        
+        self.logLayer2 = LogisticRegression(
+            input=self.sigmoid_layers2[-1].output,
+            n_in=hidden_layers_sizes2[-1],
+            n_out=n_outs2)
         self.params.extend(self.logLayer.params)
 
         # compute the cost for second phase of training, defined as the
         # negative log likelihood of the logistic regression (output) layer
-        self.finetune_cost = self.logLayer.negative_log_likelihood(self.y)
+        self.finetune_cost1 = self.logLayer1.negative_log_likelihood(self.y1)
+        self.finetune_cost2 = self.logLayer2.negative_log_likelihood(self.y2)
 
         # compute the gradients with respect to the model parameters
         # symbolic variable that points to the number of errors made on the
         # minibatch given by self.x and self.y
-        self.errors = self.logLayer.errors(self.y)
+        self.errors1 = self.logLayer1.errors(self.y1)
+        self.errors2 = self.logLayer2.errors(self.y2)
 
     def pretraining_functions(self, train_set_x, batch_size, k):
         '''Generates a list of functions, for performing one step of
