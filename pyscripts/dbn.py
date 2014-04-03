@@ -66,18 +66,23 @@ class DBN(object):
         self.params = []
         self.n_layers1 = len(hidden_layers_sizes1)
         self.n_layers2 = len(hidden_layers_sizes2) 
+        self.first_sigmoid_layer = 0
 
         assert self.n_layers1 > 0 or self.n_layers2 > 0
-
-        if not theano_rng:
-            theano_rng = RandomStreams(numpy_rng.randint(2 ** 30))
 
         # allocate symbolic variables for the data
         self.x = T.matrix('x')  # the data is presented as rasterized images
         self.y1 = T.ivector('y1')
         self.y2 = T.ivector('y2')# the labels are presented as 1D vector
                                  # of [int] labels
-        self.field = T.scal('field')
+        self.field = T.ivector('field')
+        
+        
+        
+        if not theano_rng:
+            theano_rng = RandomStreams(numpy_rng.randint(2 ** 30))
+
+        
         # The DBN is an MLP, for which all weights of intermediate
         # layers are shared with a different RBM.  We will first
         # construct the DBN as a deep multilayer perceptron, and when
@@ -101,6 +106,13 @@ class DBN(object):
             
         self.first_finetune_cost = self.first_logLayer.negative_log_likelihood(self.field)
         self.errors_field = self.first_logLayer.errors(self.field)
+        self.first_rbm = RBM(numpy_rng=numpy_rng,
+                            theano_rng=theano_rng,
+                            input=self.x,
+                            n_visible=n_ins,
+                            n_hidden=first_layer_size,
+                            W=self.first_sigmoid_layer.W,
+                            hbias=self.first_sigmoid_layer.b)
         
         for i in xrange(self.n_layers1):
             # construct the sigmoidal layer
@@ -117,7 +129,7 @@ class DBN(object):
             # hidden layer below or the input of the DBN if you are on
             # the first layer
             if i == 0:
-                layer_input = self.first_sigmoid_layer
+                layer_input = T.dot(self.first_sigmoid_layer.output,self.first_logLayer.p_y_given_x)
             else:
                 layer_input = self.sigmoid_layers1[-1].output
 
@@ -159,15 +171,15 @@ class DBN(object):
             if i == 0:
                 input_size = first_layer_size
             else:
-                input_size = hidden_layers_sizes2[i-1]
+                input_size = hidden_layers_sizes1[i]
 
             # the input to this layer is either the activation of the
             # hidden layer below or the input of the DBN if you are on
             # the first layer
             if i == 0:
-                layer_input = self.first_sigmoid_layer
+                layer_input = T.dot(self.first_sigmoid_layer.output,1 - self.first_logLayer.p_y_given_x)
             else:
-                layer_input = self.sigmoid_layers2[-1].output
+                layer_input = self.sigmoid_layers1[-1].output
 
             sigmoid_layer = HiddenLayer(rng=numpy_rng,
                                         input=layer_input,
@@ -201,13 +213,13 @@ class DBN(object):
             input=self.sigmoid_layers1[-1].output,
             n_in=hidden_layers_sizes1[-1],
             n_out=n_outs1)
-        self.params.extend(self.logLayer.params)
+        self.params.extend(self.logLayer1.params)
         
         self.logLayer2 = LogisticRegression(
             input=self.sigmoid_layers2[-1].output,
             n_in=hidden_layers_sizes2[-1],
             n_out=n_outs2)
-        self.params.extend(self.logLayer.params)
+        self.params.extend(self.logLayer2.params)
 
         # compute the cost for second phase of training, defined as the
         # negative log likelihood of the logistic regression (output) layer
@@ -248,7 +260,9 @@ class DBN(object):
         batch_end = batch_begin + batch_size
 
         pretrain_fns = []
-        for rbm in self.rbm_layers:
+        all_rbms = [self.first_rbm] + self.rbm_layers1 + self.rbm_layers2
+        
+        for rbm in all_rbms:
 
             # get the cost and the updates list
             # using CD-k here (persisent=None) for training each RBM.
@@ -365,8 +379,10 @@ class run_dbn(object):
         print '... building the model'
         # construct the Deep Belief Network
         self.dbn = DBN(numpy_rng=numpy_rng, n_ins=28 * 28,
-                  hidden_layers_sizes=[1000, 1000, 1000],
-                  n_outs=10)
+                       first_layer_size = 1000,
+                       hidden_layers_sizes1 = [1000,1000],
+                        hidden_layers_sizes2 = [1000,1000],
+                  n_outs1=10,n_outs2=5)
                   
         
     
