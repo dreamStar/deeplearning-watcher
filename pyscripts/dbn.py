@@ -37,7 +37,7 @@ class DBN(object):
 
     def __init__(self, numpy_rng, theano_rng=None, n_ins=784,first_layer_size = 500,
                  hidden_layers_sizes1=[500],
-                hidden_layers_sizes2 = [500], n_outs1=10,n_outs2=5):
+                hidden_layers_sizes2 = [500], n_outs1=5,n_outs2=5):
         """This class is made to support a variable number of layers.
 
         :type numpy_rng: numpy.random.RandomState
@@ -63,7 +63,9 @@ class DBN(object):
         self.sigmoid_layers2 = []
         self.rbm_layers1 = []
         self.rbm_layers2 = []
-        self.params = []
+        self.params1 = []
+        self.params2 = []
+        self.params_first = []
         self.n_layers1 = len(hidden_layers_sizes1)
         self.n_layers2 = len(hidden_layers_sizes2) 
         self.first_sigmoid_layer = 0
@@ -105,7 +107,7 @@ class DBN(object):
             n_out = 2)   
             
         self.first_finetune_cost = self.first_logLayer.negative_log_likelihood(self.field)
-        self.errors_field = self.first_logLayer.errors(self.field)
+        self.errors_first = self.first_logLayer.errors(self.field)
         self.first_rbm = RBM(numpy_rng=numpy_rng,
                             theano_rng=theano_rng,
                             input=self.x,
@@ -113,6 +115,9 @@ class DBN(object):
                             n_hidden=first_layer_size,
                             W=self.first_sigmoid_layer.W,
                             hbias=self.first_sigmoid_layer.b)
+        self.params_first.extend(self.first_sigmoid_layer.params)
+        self.params1.extend(self.first_sigmoid_layer.params)
+        self.params2.extend(self.first_sigmoid_layer.params)
         
         for i in xrange(self.n_layers1):
             # construct the sigmoidal layer
@@ -147,7 +152,7 @@ class DBN(object):
             # sigmoid_layers are parameters of the DBN. The visible
             # biases in the RBM are parameters of those RBMs, but not
             # of the DBN.
-            self.params.extend(sigmoid_layer.params)
+            self.params1.extend(sigmoid_layer.params)
 
             # Construct an RBM that shared weights with this layer
             rbm_layer = RBM(numpy_rng=numpy_rng,
@@ -195,7 +200,7 @@ class DBN(object):
             # sigmoid_layers are parameters of the DBN. The visible
             # biases in the RBM are parameters of those RBMs, but not
             # of the DBN.
-            self.params.extend(sigmoid_layer.params)
+            self.params2.extend(sigmoid_layer.params)
 
             # Construct an RBM that shared weights with this layer
             rbm_layer = RBM(numpy_rng=numpy_rng,
@@ -213,13 +218,13 @@ class DBN(object):
             input=self.sigmoid_layers1[-1].output,
             n_in=hidden_layers_sizes1[-1],
             n_out=n_outs1)
-        self.params.extend(self.logLayer1.params)
+        self.params1.extend(self.logLayer1.params)
         
         self.logLayer2 = LogisticRegression(
             input=self.sigmoid_layers2[-1].output,
             n_in=hidden_layers_sizes2[-1],
             n_out=n_outs2)
-        self.params.extend(self.logLayer2.params)
+        self.params2.extend(self.logLayer2.params)
 
         # compute the cost for second phase of training, defined as the
         # negative log likelihood of the logistic regression (output) layer
@@ -231,8 +236,9 @@ class DBN(object):
         # minibatch given by self.x and self.y
         self.errors1 = self.logLayer1.errors(self.y1)
         self.errors2 = self.logLayer2.errors(self.y2)
+        
 
-    def pretraining_functions(self, train_set_x, batch_size, k):
+    def pretraining_functions(self, train_set_x,train_set_field,batch_size, k , field):
         '''Generates a list of functions, for performing one step of
         gradient descent at a given layer. The function will require
         as input the minibatch index, and to train an RBM you just
@@ -260,7 +266,11 @@ class DBN(object):
         batch_end = batch_begin + batch_size
 
         pretrain_fns = []
-        all_rbms = [self.first_rbm] + self.rbm_layers1 + self.rbm_layers2
+        all_rbms = [self.first_rbm]
+        if field == 1 :
+            all_rbms = all_rbms + self.rbm_layers1
+        else:    
+            all_rbms = all_rbms + self.rbm_layers2
         
         for rbm in all_rbms:
 
@@ -277,7 +287,8 @@ class DBN(object):
                                  outputs=cost,
                                  updates=updates,
                                  givens={self.x:
-                                    train_set_x[batch_begin:batch_end]})
+                                    train_set_x[batch_begin:batch_end]
+                                    })
             # append `fn` to the list of functions
             pretrain_fns.append(fn)
 
@@ -302,9 +313,9 @@ class DBN(object):
 
         '''
 
-        (train_set_x, train_set_y) = datasets[0]
-        (valid_set_x, valid_set_y) = datasets[1]
-        (test_set_x, test_set_y) = datasets[2]
+        (train_set_x, train_set_y,train_set_field) = datasets[0]
+        (valid_set_x, valid_set_y,valid_set_field) = datasets[1]
+        (test_set_x, test_set_y,test_set_field) = datasets[2]
 
         # compute number of minibatches for training, validation and testing
         n_valid_batches = valid_set_x.get_value(borrow=True).shape[0]
@@ -316,42 +327,91 @@ class DBN(object):
 
         # compute the gradients with respect to the model parameters
         
-        gparams = T.grad(self.finetune_cost, self.params)
-
+        gparams1 = T.grad(self.finetune_cost1, self.params1)
+        gparams2 = T.grad(self.finetune_cost2, self.params2)
+        gparams_first = T.grad(self.first_finetune_cost,self.params_first)
         # compute list of fine-tuning updates
-        updates = []
-        for param, gparam in zip(self.params, gparams):
-            updates.append((param, param - gparam * learning_rate))
-
-        train_fn = theano.function(inputs=[index],
-              outputs=self.finetune_cost,
-              updates=updates,
+        updates1 = []
+        updates2 = []
+        updates_first = []
+        for param, gparam in zip(self.params_first, gparams_first):
+            updates_first.append((param, param - gparam * learning_rate))
+        for param, gparam in zip(self.params1, gparams1):
+            updates1.append((param, param - gparam * learning_rate))
+        for param, gparam in zip(self.params2, gparams2):
+            updates2.append((param, param - gparam * learning_rate))
+          
+        train_fn_first = theano.function(inputs=[index],
+              outputs=self.first_finetune_cost,
+              updates=updates_first,
+              givens={self.x: train_set_x[index * batch_size:
+                                          (index + 1) * batch_size],
+                      self.field: train_set_field[index * batch_size:
+                                          (index + 1) * batch_size]})
+        train_fn1 = theano.function(inputs=[index],
+              outputs=self.finetune_cost1,
+              updates=updates1,
+              givens={self.x: train_set_x[index * batch_size:
+                                          (index + 1) * batch_size],
+                      self.y: train_set_y[index * batch_size:
+                                          (index + 1) * batch_size]})
+                                          
+        train_fn2 = theano.function(inputs=[index],
+              outputs=self.finetune_cost2,
+              updates=updates2,
               givens={self.x: train_set_x[index * batch_size:
                                           (index + 1) * batch_size],
                       self.y: train_set_y[index * batch_size:
                                           (index + 1) * batch_size]})
 
-        test_score_i = theano.function([index], self.errors,
+        test_score_i_first = theano.function([index], self.errors_first,
+                 givens={self.x: test_set_x[index * batch_size:
+                                            (index + 1) * batch_size],
+                         self.field: test_set_field[index * batch_size:
+                                            (index + 1) * batch_size]})
+        test_score_i1 = theano.function([index], self.errors1,
+                 givens={self.x: test_set_x[index * batch_size:
+                                            (index + 1) * batch_size],
+                         self.y: test_set_y[index * batch_size:
+                                            (index + 1) * batch_size]})
+        test_score_i2 = theano.function([index], self.errors2,
                  givens={self.x: test_set_x[index * batch_size:
                                             (index + 1) * batch_size],
                          self.y: test_set_y[index * batch_size:
                                             (index + 1) * batch_size]})
 
-        valid_score_i = theano.function([index], self.errors,
+        valid_score_i_first = theano.function([index], self.errors_first,
+              givens={self.x: valid_set_x[index * batch_size:
+                                          (index + 1) * batch_size],
+                      self.field: valid_set_field[index * batch_size:
+                                          (index + 1) * batch_size]}) 
+                                          
+        valid_score_i1 = theano.function([index], self.errors1,
+              givens={self.x: valid_set_x[index * batch_size:
+                                          (index + 1) * batch_size],
+                      self.y: valid_set_y[index * batch_size:
+                                          (index + 1) * batch_size]})        
+        
+        valid_score_i2 = theano.function([index], self.errors2,
               givens={self.x: valid_set_x[index * batch_size:
                                           (index + 1) * batch_size],
                       self.y: valid_set_y[index * batch_size:
                                           (index + 1) * batch_size]})
 
         # Create a function that scans the entire validation set
-        def valid_score():
-            return [valid_score_i(i) for i in xrange(n_valid_batches)]
+        
+        def valid_score1():
+            return [valid_score_i1(i) for i in xrange(n_valid_batches)]
+        def valid_score2():
+            return [valid_score_i2(i) for i in xrange(n_valid_batches)]
 
         # Create a function that scans the entire test set
-        def test_score():
-            return [test_score_i(i) for i in xrange(n_test_batches)]
+        def test_score1():
+            return [test_score_i1(i) for i in xrange(n_test_batches)]
+        def test_score2():
+            return [test_score_i2(i) for i in xrange(n_test_batches)]
 
-        return train_fn, valid_score, test_score
+        return train_fn1, valid_score1, test_score1,train_fn2,valid_score2,test_score2
         
 class run_dbn(object):
 
@@ -389,20 +449,36 @@ class run_dbn(object):
     def pre_train(self,pretraining_epochs = 50,
                  pretrain_lr=0.01, k=1):
         print '... getting the pretraining functions'
-        pretraining_fns = self.dbn.pretraining_functions(train_set_x=self.train_set_x,
+        pretraining_fns1 = self.dbn.pretraining_functions(train_set_x=self.train_set_x,
+                                                          train_set_field = self.train_set_field,
                                                     batch_size=self.batch_size,
-                                                    k=k)
+                                                    k=k,field = 1)
+        pretraining_fns2 = self.dbn.pretraining_functions(train_set_x=self.train_set_x,
+                                                          train_set_field = self.train_set_field,
+                                                    batch_size=self.batch_size,
+                                                    k=k,field = 2)
     
         print '... pre-training the model'
         #start_time = time.clock()
         ## Pre-train layer-wise
-        for i in xrange(self.dbn.n_layers):
+        for i in xrange(self.dbn.n_layers1):
             # go through pretraining epochs
             for epoch in xrange(pretraining_epochs):
                 # go through the training set
                 c = []
                 for batch_index in xrange(self.n_train_batches):
-                    c.append(pretraining_fns[i](index=batch_index,
+                    c.append(pretraining_fns1[i](index=batch_index,
+                                                lr=pretrain_lr))
+                print 'Pre-training layer %i, epoch %d, cost ' % (i, epoch),
+                print numpy.mean(c)
+                
+        for i in xrange(self.dbn.n_layers2):
+            # go through pretraining epochs
+            for epoch in xrange(pretraining_epochs):
+                # go through the training set
+                c = []
+                for batch_index in xrange(self.n_train_batches):
+                    c.append(pretraining_fns2[i](index=batch_index,
                                                 lr=pretrain_lr))
                 print 'Pre-training layer %i, epoch %d, cost ' % (i, epoch),
                 print numpy.mean(c)
@@ -411,7 +487,7 @@ class run_dbn(object):
 
     def train(self,finetune_lr=0.1,training_epochs=50):
         print '... getting the finetuning functions'
-        self.train_fn, self.validate_model, self.test_model = self.dbn.build_finetune_functions(
+        self.train_fn1, self.validate_model1, self.test_model1,self.train_fn2, self.validate_model2, self.test_model2 = self.dbn.build_finetune_functions(
                     datasets=self.datasets, batch_size=self.batch_size,
                     learning_rate=finetune_lr)
     
@@ -428,9 +504,12 @@ class run_dbn(object):
                                       # on the validation set; in this case we
                                       # check every epoch
     
-        best_params = None
-        best_validation_loss = numpy.inf
-        test_score = 0.
+        best_params1 = None
+        best_params2 = None
+        best_validation_loss1 = numpy.inf
+        best_validation_loss2 = numpy.inf
+        test_score1 = 0.
+        test_score2 = 0.
         start_time = time.clock()
     
         done_looping = False
@@ -440,36 +519,62 @@ class run_dbn(object):
             epoch = epoch + 1
             for minibatch_index in xrange(self.n_train_batches):
     
-                minibatch_avg_cost = self.train_fn(minibatch_index)
+                minibatch_avg_cost1 = self.train_fn1(minibatch_index)
+                minibatch_avg_cost2 = self.train_fn2(minibatch_index)
                 iter = (epoch - 1) * self.n_train_batches + minibatch_index
     
                 if (iter + 1) % validation_frequency == 0:
     
-                    validation_losses = self.validate_model()
-                    this_validation_loss = numpy.mean(validation_losses)
+                    validation_losses1 = self.validate_model1()
+                    validation_losses2 = self.validate_model2()
+                    this_validation_loss1 = numpy.mean(validation_losses1)
+                    this_validation_loss2 = numpy.mean(validation_losses2)
                     print('epoch %i, minibatch %i/%i, validation error %f %%' % \
                           (epoch, minibatch_index + 1, self.n_train_batches,
-                           this_validation_loss * 100.))
+                           this_validation_loss1 * 100.))
+                    print('epoch %i, minibatch %i/%i, validation error %f %%' % \
+                          (epoch, minibatch_index + 1, self.n_train_batches,
+                           this_validation_loss2 * 100.))
     
                     # if we got the best validation score until now
-                    if this_validation_loss < best_validation_loss:
+                    if this_validation_loss1 < best_validation_loss1:
     
                         #improve patience if loss improvement is good enough
-                        if (this_validation_loss < best_validation_loss *
+                        if (this_validation_loss1 < best_validation_loss1 *
                             improvement_threshold):
                             patience = max(patience, iter * patience_increase)
     
                         # save best validation score and iteration number
-                        best_validation_loss = this_validation_loss
-                        best_iter = iter
+                        best_validation_loss1 = this_validation_loss1
+                        best_iter1 = iter
     
                         # test it on the test set
-                        test_losses = self.test_model()
-                        test_score = numpy.mean(test_losses)
+                        test_losses1 = self.test_model1()
+                        test_score1 = numpy.mean(test_losses1)
                         print(('     epoch %i, minibatch %i/%i, test error of '
                                'best model %f %%') %
                               (epoch, minibatch_index + 1, self.n_train_batches,
-                               test_score * 100.))
+                               test_score1 * 100.))
+                               
+                    # if we got the best validation score until now
+                    if this_validation_loss2 < best_validation_loss2:
+    
+                        #improve patience if loss improvement is good enough
+                        if (this_validation_loss2 < best_validation_loss2 *
+                            improvement_threshold):
+                            patience = max(patience, iter * patience_increase)
+    
+                        # save best validation score and iteration number
+                        best_validation_loss2 = this_validation_loss2
+                        best_iter2 = iter
+    
+                        # test it on the test set
+                        test_losses2 = self.test_model2()
+                        test_score2 = numpy.mean(test_losses2)
+                        print(('     epoch %i, minibatch %i/%i, test error of '
+                               'best model %f %%') %
+                              (epoch, minibatch_index + 1, self.n_train_batches,
+                               test_score2 * 100.))
     
                 if patience <= iter:
                     done_looping = True
