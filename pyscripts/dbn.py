@@ -104,7 +104,7 @@ class DBN(object):
         self.first_logLayer = LogisticRegression(
             input = self.first_sigmoid_layer.output,
             n_in = n_ins,
-            n_out = 2)   
+            n_out = 1)   
             
         self.first_finetune_cost = self.first_logLayer.negative_log_likelihood(self.field)
         self.errors_first = self.first_logLayer.errors(self.field)
@@ -120,8 +120,20 @@ class DBN(object):
         self.params2.extend(self.first_sigmoid_layer.params)
         
         for i in xrange(self.n_layers1):
-            # construct the sigmoidal layer
-
+                     
+            
+            # the input to this layer is either the activation of the
+            # hidden layer below or the input of the DBN if you are on
+            # the first layer
+            print type(self.first_sigmoid_layer.output),type(self.first_logLayer.y_pred)
+            print self.first_sigmoid_layer.output.type,self.first_logLayer.y_pred.type
+            print T.shape(self.first_sigmoid_layer.output),T.shape(self.first_logLayer.y_pred)
+            if i == 0:
+                layer_input = self.first_sigmoid_layer.output*self.first_logLayer.y_pred.dimshuffle((0,'x'))
+                #layer_input = self.first_sigmoid_layer.output
+            else:
+                layer_input = self.sigmoid_layers1[-1].output            
+            
             # the size of the input is either the number of hidden
             # units of the layer below or the input size if we are on
             # the first layer
@@ -130,13 +142,7 @@ class DBN(object):
             else:
                 input_size = hidden_layers_sizes1[i]
 
-            # the input to this layer is either the activation of the
-            # hidden layer below or the input of the DBN if you are on
-            # the first layer
-            if i == 0:
-                layer_input = T.dot(self.first_sigmoid_layer.output,self.first_logLayer.p_y_given_x)
-            else:
-                layer_input = self.sigmoid_layers1[-1].output
+            
 
             sigmoid_layer = HiddenLayer(rng=numpy_rng,
                                         input=layer_input,
@@ -182,7 +188,7 @@ class DBN(object):
             # hidden layer below or the input of the DBN if you are on
             # the first layer
             if i == 0:
-                layer_input = T.dot(self.first_sigmoid_layer.output,1 - self.first_logLayer.p_y_given_x)
+                layer_input = T.mul(self.first_sigmoid_layer.output,(1-self.first_logLayer.y_pred.dimshuffle((0,'x'))))
             else:
                 layer_input = self.sigmoid_layers1[-1].output
 
@@ -237,7 +243,9 @@ class DBN(object):
         self.errors1 = self.logLayer1.errors(self.y1)
         self.errors2 = self.logLayer2.errors(self.y2)
         
-
+    """
+    BUG to fix!!
+    """
     def pretraining_functions(self, train_set_x,train_set_field,batch_size, k , field):
         '''Generates a list of functions, for performing one step of
         gradient descent at a given layer. The function will require
@@ -273,25 +281,23 @@ class DBN(object):
             all_rbms = all_rbms + self.rbm_layers2
         
         for rbm in all_rbms:
-
+        #for i in xrange(len(all_rbms)):
             # get the cost and the updates list
             # using CD-k here (persisent=None) for training each RBM.
             # TODO: change cost function to reconstruction error
-            
             cost, updates = rbm.get_cost_updates(learning_rate,
-                                                 persistent=None, k=k)
-
+                                                     persistent=None, k=k)
             # compile the theano function
             fn = theano.function(inputs=[index,
-                            theano.Param(learning_rate, default=0.1)],
-                                 outputs=cost,
-                                 updates=updates,
-                                 givens={self.x:
-                                    train_set_x[batch_begin:batch_end]
-                                    })
-            # append `fn` to the list of functions
-            pretrain_fns.append(fn)
-
+                                theano.Param(learning_rate, default=0.1)],
+                                     outputs=cost,
+                                     updates=updates,
+                                     givens={self.x:
+                                        train_set_x[batch_begin:batch_end]
+                                        })
+                # append `fn` to the list of functions
+            pretrain_fns.append(fn)           
+                
         return pretrain_fns
 
     def build_finetune_functions(self, datasets, batch_size, learning_rate):
@@ -429,9 +435,20 @@ class run_dbn(object):
             #self.valid_set_y.set_value(self.valid_set_y.get_value()[0:100])
             self.test_set_x.set_value(self.test_set_x.get_value()[0:100])
             #self.test_set_y.set_value(self.test_set_y.get_value()[0:100])
+            
+        self._get_samples_field()
     
         # compute number of minibatches for training, validation and testing
         self.n_train_batches = self.train_set_x.get_value(borrow=True).shape[0] / batch_size
+    
+    def _get_samples_field(self):
+        self.train_set_field = self.train_set_y.eval()
+        self.valid_set_field = self.valid_set_y.eval()
+        self.test_set_field = self.test_set_y.eval()
+        
+        self.train_set_field = T.basic.TensorVariable(map(lambda x : floor(x / 5),self.train_set_field))  
+        self.valid_set_field = T.basic.TensorVariable(map(lambda x : floor(x / 5),self.valid_set_field))
+        self.test_set_field = T.basic.TensorVariable(map(lambda x : floor(x / 5),self.test_set_field))
     
     def make_fun(self):
         # numpy random generator
@@ -439,10 +456,10 @@ class run_dbn(object):
         print '... building the model'
         # construct the Deep Belief Network
         self.dbn = DBN(numpy_rng=numpy_rng, n_ins=28 * 28,
-                       first_layer_size = 1000,
-                       hidden_layers_sizes1 = [1000,1000],
-                        hidden_layers_sizes2 = [1000,1000],
-                  n_outs1=10,n_outs2=5)
+                       first_layer_size = 500,
+                       hidden_layers_sizes1 = [500,500],
+                        hidden_layers_sizes2 = [500,500],
+                  n_outs1=5,n_outs2=5)
                   
         
     
@@ -463,6 +480,9 @@ class run_dbn(object):
         ## Pre-train layer-wise
         for i in xrange(self.dbn.n_layers1):
             # go through pretraining epochs
+        
+            if isdebug:
+                if i == 0 : continue
             for epoch in xrange(pretraining_epochs):
                 # go through the training set
                 c = []
@@ -740,4 +760,7 @@ def test_DBN(finetune_lr=0.1, pretraining_epochs=50,
 
 if __name__ == '__main__':
     #test_DBN()
-    pass
+    x = run_dbn()
+    x.pre_data()
+    x.make_fun()
+    x.pre_train()
