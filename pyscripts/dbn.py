@@ -37,7 +37,7 @@ class DBN(object):
 
     def __init__(self, numpy_rng, theano_rng=None, n_ins=784,first_layer_size = 500,
                  hidden_layers_sizes1=[500],
-                hidden_layers_sizes2 = [500], n_outs1=5,n_outs2=5):
+                hidden_layers_sizes2 = [500], n_outs1=10,n_outs2=10):
         """This class is made to support a variable number of layers.
 
         :type numpy_rng: numpy.random.RandomState
@@ -182,7 +182,7 @@ class DBN(object):
             if i == 0:
                 input_size = first_layer_size
             else:
-                input_size = hidden_layers_sizes1[i]
+                input_size = hidden_layers_sizes2[i]
 
             # the input to this layer is either the activation of the
             # hidden layer below or the input of the DBN if you are on
@@ -190,7 +190,7 @@ class DBN(object):
             if i == 0:
                 layer_input = T.mul(self.first_sigmoid_layer.output,(1-self.first_logLayer.y_pred.dimshuffle((0,'x'))))
             else:
-                layer_input = self.sigmoid_layers1[-1].output
+                layer_input = self.sigmoid_layers2[-1].output
 
             sigmoid_layer = HiddenLayer(rng=numpy_rng,
                                         input=layer_input,
@@ -234,8 +234,9 @@ class DBN(object):
 
         # compute the cost for second phase of training, defined as the
         # negative log likelihood of the logistic regression (output) layer
-        self.finetune_cost1 = self.logLayer1.negative_log_likelihood(self.y1)
         self.finetune_cost2 = self.logLayer2.negative_log_likelihood(self.y2)
+        self.finetune_cost1 = self.logLayer1.negative_log_likelihood(self.y1)
+        
 
         # compute the gradients with respect to the model parameters
         # symbolic variable that points to the number of errors made on the
@@ -300,7 +301,7 @@ class DBN(object):
                 
         return pretrain_fns
 
-    def build_finetune_functions(self, datasets, batch_size, learning_rate):
+    def build_finetune_functions(self, datasets, fields,batch_size, learning_rate):
         '''Generates a function `train` that implements one step of
         finetuning, a function `validate` that computes the error on a
         batch from the validation set, and a function `test` that
@@ -319,10 +320,11 @@ class DBN(object):
 
         '''
 
-        (train_set_x, train_set_y,train_set_field) = datasets[0]
-        (valid_set_x, valid_set_y,valid_set_field) = datasets[1]
-        (test_set_x, test_set_y,test_set_field) = datasets[2]
-
+        (train_set_x, train_set_y) = datasets[0]
+        (valid_set_x, valid_set_y) = datasets[1]
+        (test_set_x, test_set_y) = datasets[2]
+        train_set_field,valid_set_field,test_set_field = fields
+        
         # compute number of minibatches for training, validation and testing
         n_valid_batches = valid_set_x.get_value(borrow=True).shape[0]
         n_valid_batches /= batch_size
@@ -332,9 +334,9 @@ class DBN(object):
         index = T.lscalar('index')  # index to a [mini]batch
 
         # compute the gradients with respect to the model parameters
-        
-        gparams1 = T.grad(self.finetune_cost1, self.params1)
         gparams2 = T.grad(self.finetune_cost2, self.params2)
+        gparams1 = T.grad(self.finetune_cost1, self.params1)
+        
         gparams_first = T.grad(self.first_finetune_cost,self.params_first)
         # compute list of fine-tuning updates
         updates1 = []
@@ -359,7 +361,7 @@ class DBN(object):
               updates=updates1,
               givens={self.x: train_set_x[index * batch_size:
                                           (index + 1) * batch_size],
-                      self.y: train_set_y[index * batch_size:
+                      self.y1: train_set_y[index * batch_size:
                                           (index + 1) * batch_size]})
                                           
         train_fn2 = theano.function(inputs=[index],
@@ -367,7 +369,7 @@ class DBN(object):
               updates=updates2,
               givens={self.x: train_set_x[index * batch_size:
                                           (index + 1) * batch_size],
-                      self.y: train_set_y[index * batch_size:
+                      self.y2: train_set_y[index * batch_size:
                                           (index + 1) * batch_size]})
 
         test_score_i_first = theano.function([index], self.errors_first,
@@ -378,12 +380,12 @@ class DBN(object):
         test_score_i1 = theano.function([index], self.errors1,
                  givens={self.x: test_set_x[index * batch_size:
                                             (index + 1) * batch_size],
-                         self.y: test_set_y[index * batch_size:
+                         self.y1: test_set_y[index * batch_size:
                                             (index + 1) * batch_size]})
         test_score_i2 = theano.function([index], self.errors2,
                  givens={self.x: test_set_x[index * batch_size:
                                             (index + 1) * batch_size],
-                         self.y: test_set_y[index * batch_size:
+                         self.y2: test_set_y[index * batch_size:
                                             (index + 1) * batch_size]})
 
         valid_score_i_first = theano.function([index], self.errors_first,
@@ -395,13 +397,13 @@ class DBN(object):
         valid_score_i1 = theano.function([index], self.errors1,
               givens={self.x: valid_set_x[index * batch_size:
                                           (index + 1) * batch_size],
-                      self.y: valid_set_y[index * batch_size:
+                      self.y1: valid_set_y[index * batch_size:
                                           (index + 1) * batch_size]})        
         
         valid_score_i2 = theano.function([index], self.errors2,
               givens={self.x: valid_set_x[index * batch_size:
                                           (index + 1) * batch_size],
-                      self.y: valid_set_y[index * batch_size:
+                      self.y2: valid_set_y[index * batch_size:
                                           (index + 1) * batch_size]})
 
         # Create a function that scans the entire validation set
@@ -421,7 +423,7 @@ class DBN(object):
         
 class run_dbn(object):
 
-    def pre_data(self,dataset = 'Z:\share\databases\mnist\mnist.pkl.gz',batch_size = 10):
+    def pre_data(self,dataset = r'D:\databases\mnist\mnist.pkl.gz',batch_size = 10):
         self.datasets = load_data(dataset)
         self.batch_size = batch_size;
         self.train_set_x, self.train_set_y = self.datasets[0]
@@ -446,9 +448,9 @@ class run_dbn(object):
         self.valid_set_field = self.valid_set_y.eval()
         self.test_set_field = self.test_set_y.eval()
         
-        self.train_set_field = T.basic.TensorVariable(map(lambda x : floor(x / 5),self.train_set_field))  
-        self.valid_set_field = T.basic.TensorVariable(map(lambda x : floor(x / 5),self.valid_set_field))
-        self.test_set_field = T.basic.TensorVariable(map(lambda x : floor(x / 5),self.test_set_field))
+        self.train_set_field = T.as_tensor_variable(map(lambda x : int(floor(x / 5)),self.train_set_field))  
+        self.valid_set_field = T.as_tensor_variable(map(lambda x : int(floor(x / 5)),self.valid_set_field))
+        self.test_set_field = T.as_tensor_variable(map(lambda x : int(floor(x / 5)),self.test_set_field))
     
     def make_fun(self):
         # numpy random generator
@@ -459,7 +461,7 @@ class run_dbn(object):
                        first_layer_size = 500,
                        hidden_layers_sizes1 = [500,500],
                         hidden_layers_sizes2 = [500,500],
-                  n_outs1=5,n_outs2=5)
+                  n_outs1=10,n_outs2=10)
                   
         
     
@@ -480,9 +482,6 @@ class run_dbn(object):
         ## Pre-train layer-wise
         for i in xrange(self.dbn.n_layers1):
             # go through pretraining epochs
-        
-            if isdebug:
-                if i == 0 : continue
             for epoch in xrange(pretraining_epochs):
                 # go through the training set
                 c = []
@@ -508,7 +507,9 @@ class run_dbn(object):
     def train(self,finetune_lr=0.1,training_epochs=50):
         print '... getting the finetuning functions'
         self.train_fn1, self.validate_model1, self.test_model1,self.train_fn2, self.validate_model2, self.test_model2 = self.dbn.build_finetune_functions(
-                    datasets=self.datasets, batch_size=self.batch_size,
+                    datasets=self.datasets, 
+                    fields = (self.train_set_field,self.valid_set_field,self.test_set_field),
+                    batch_size=self.batch_size,
                     learning_rate=finetune_lr)
     
         print '... finetunning the model'
@@ -538,7 +539,7 @@ class run_dbn(object):
         while (epoch < training_epochs) and (not done_looping):
             epoch = epoch + 1
             for minibatch_index in xrange(self.n_train_batches):
-    
+                
                 minibatch_avg_cost1 = self.train_fn1(minibatch_index)
                 minibatch_avg_cost2 = self.train_fn2(minibatch_index)
                 iter = (epoch - 1) * self.n_train_batches + minibatch_index
@@ -600,9 +601,11 @@ class run_dbn(object):
                     done_looping = True
                     break
         end_time = time.clock()
+        """
         print(('Optimization complete with best validation score of %f %%,'
                'with test performance %f %%') %
                      (best_validation_loss * 100., test_score * 100.))
+        """
         """             
         print >> sys.stderr, ('The fine tuning code for file ' +
                               os.path.split(__file__)[1] +
@@ -764,3 +767,4 @@ if __name__ == '__main__':
     x.pre_data()
     x.make_fun()
     x.pre_train()
+    x.train()
