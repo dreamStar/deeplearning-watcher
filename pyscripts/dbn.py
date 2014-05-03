@@ -100,11 +100,11 @@ class DBN(object):
                                         n_in=n_ins,
                                         n_out=first_layer_size,
                                         activation=T.nnet.sigmoid)
-                                        
+        #self.first_sigmoid_layer.output size:batch_size * first_layer_size                                
         self.first_logLayer = LogisticRegression(
             input = self.first_sigmoid_layer.output,
-            n_in = n_ins,
-            n_out = 1)   
+            n_in = first_layer_size,
+            n_out = 2)   
             
         self.first_finetune_cost = self.first_logLayer.negative_log_likelihood(self.field)
         self.errors_first = self.first_logLayer.errors(self.field)
