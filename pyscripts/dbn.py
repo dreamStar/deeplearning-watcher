@@ -23,7 +23,7 @@ from logisticSgd import LogisticRegression, load_data
 from mlp import HiddenLayer
 from rbm import RBM
 
-isdebug = True
+isdebug = False
 class DBN(object):
     """Deep Belief Network
 
@@ -100,11 +100,16 @@ class DBN(object):
                                         n_in=n_ins,
                                         n_out=first_layer_size,
                                         activation=T.nnet.sigmoid)
+        self.params_first.extend(self.first_sigmoid_layer.params)
+        self.params1.extend(self.first_sigmoid_layer.params)
+        self.params2.extend(self.first_sigmoid_layer.params)
+        
         #self.first_sigmoid_layer.output size:batch_size * first_layer_size                                
         self.first_logLayer = LogisticRegression(
             input = self.first_sigmoid_layer.output,
             n_in = first_layer_size,
             n_out = 2)   
+        self.params_first.extend(self.first_logLayer.params)
             
         self.first_finetune_cost = self.first_logLayer.negative_log_likelihood(self.field)
         self.errors_first = self.first_logLayer.errors(self.field)
@@ -115,9 +120,7 @@ class DBN(object):
                             n_hidden=first_layer_size,
                             W=self.first_sigmoid_layer.W,
                             hbias=self.first_sigmoid_layer.b)
-        self.params_first.extend(self.first_sigmoid_layer.params)
-        self.params1.extend(self.first_sigmoid_layer.params)
-        self.params2.extend(self.first_sigmoid_layer.params)
+        
         
         for i in xrange(self.n_layers1):
                      
@@ -125,9 +128,7 @@ class DBN(object):
             # the input to this layer is either the activation of the
             # hidden layer below or the input of the DBN if you are on
             # the first layer
-            print type(self.first_sigmoid_layer.output),type(self.first_logLayer.y_pred)
-            print self.first_sigmoid_layer.output.type,self.first_logLayer.y_pred.type
-            print T.shape(self.first_sigmoid_layer.output),T.shape(self.first_logLayer.y_pred)
+            
             if i == 0:
                 layer_input = self.first_sigmoid_layer.output*self.first_logLayer.y_pred.dimshuffle((0,'x'))
                 #layer_input = self.first_sigmoid_layer.output
@@ -320,9 +321,9 @@ class DBN(object):
 
         '''
 
-        (train_set_x, train_set_y) = datasets[0]
-        (valid_set_x, valid_set_y) = datasets[1]
-        (test_set_x, test_set_y) = datasets[2]
+        (train_set_x, train_set_y1,train_set_y2) = datasets[0]
+        (valid_set_x, valid_set_y1,valid_set_y2) = datasets[1]
+        (test_set_x, test_set_y1,test_set_y2) = datasets[2]
         train_set_field,valid_set_field,test_set_field = fields
         
         # compute number of minibatches for training, validation and testing
@@ -361,7 +362,7 @@ class DBN(object):
               updates=updates1,
               givens={self.x: train_set_x[index * batch_size:
                                           (index + 1) * batch_size],
-                      self.y1: train_set_y[index * batch_size:
+                      self.y1: train_set_y1[index * batch_size:
                                           (index + 1) * batch_size]})
                                           
         train_fn2 = theano.function(inputs=[index],
@@ -369,7 +370,7 @@ class DBN(object):
               updates=updates2,
               givens={self.x: train_set_x[index * batch_size:
                                           (index + 1) * batch_size],
-                      self.y2: train_set_y[index * batch_size:
+                      self.y2: train_set_y2[index * batch_size:
                                           (index + 1) * batch_size]})
 
         test_score_i_first = theano.function([index], self.errors_first,
@@ -380,12 +381,12 @@ class DBN(object):
         test_score_i1 = theano.function([index], self.errors1,
                  givens={self.x: test_set_x[index * batch_size:
                                             (index + 1) * batch_size],
-                         self.y1: test_set_y[index * batch_size:
+                         self.y1: test_set_y1[index * batch_size:
                                             (index + 1) * batch_size]})
         test_score_i2 = theano.function([index], self.errors2,
                  givens={self.x: test_set_x[index * batch_size:
                                             (index + 1) * batch_size],
-                         self.y2: test_set_y[index * batch_size:
+                         self.y2: test_set_y2[index * batch_size:
                                             (index + 1) * batch_size]})
 
         valid_score_i_first = theano.function([index], self.errors_first,
@@ -397,16 +398,19 @@ class DBN(object):
         valid_score_i1 = theano.function([index], self.errors1,
               givens={self.x: valid_set_x[index * batch_size:
                                           (index + 1) * batch_size],
-                      self.y1: valid_set_y[index * batch_size:
+                      self.y1: valid_set_y1[index * batch_size:
                                           (index + 1) * batch_size]})        
         
         valid_score_i2 = theano.function([index], self.errors2,
               givens={self.x: valid_set_x[index * batch_size:
                                           (index + 1) * batch_size],
-                      self.y2: valid_set_y[index * batch_size:
+                      self.y2: valid_set_y2[index * batch_size:
                                           (index + 1) * batch_size]})
 
         # Create a function that scans the entire validation set
+        
+        def valid_score_first():
+            return [valid_score_i_first(i) for i in xrange(n_valid_batches)]        
         
         def valid_score1():
             return [valid_score_i1(i) for i in xrange(n_valid_batches)]
@@ -414,12 +418,14 @@ class DBN(object):
             return [valid_score_i2(i) for i in xrange(n_valid_batches)]
 
         # Create a function that scans the entire test set
+        def test_score_first():
+            return [test_score_i_first(i) for i in xrange(n_test_batches)]
         def test_score1():
             return [test_score_i1(i) for i in xrange(n_test_batches)]
         def test_score2():
             return [test_score_i2(i) for i in xrange(n_test_batches)]
 
-        return train_fn1, valid_score1, test_score1,train_fn2,valid_score2,test_score2
+        return train_fn1, valid_score1, test_score1,train_fn2,valid_score2,test_score2,train_fn_first,valid_score_first,test_score_first
         
 class run_dbn(object):
 
@@ -431,11 +437,11 @@ class run_dbn(object):
         self.test_set_x, self.test_set_y = self.datasets[2]
         
         if isdebug:
-            self.train_set_x.set_value(self.train_set_x.get_value()[0:100])
+            self.train_set_x.set_value(self.train_set_x.get_value()[100:200])
             #self.train_set_y.set_value(self.train_set_y.get_value()[0:100])
-            self.valid_set_x.set_value(self.valid_set_x.get_value()[0:100])
+            self.valid_set_x.set_value(self.valid_set_x.get_value()[100:200])
             #self.valid_set_y.set_value(self.valid_set_y.get_value()[0:100])
-            self.test_set_x.set_value(self.test_set_x.get_value()[0:100])
+            self.test_set_x.set_value(self.test_set_x.get_value()[100:200])
             #self.test_set_y.set_value(self.test_set_y.get_value()[0:100])
             
         self._get_samples_field()
@@ -444,14 +450,32 @@ class run_dbn(object):
         self.n_train_batches = self.train_set_x.get_value(borrow=True).shape[0] / batch_size
     
     def _get_samples_field(self):
-        self.train_set_field = self.train_set_y.eval()
-        self.valid_set_field = self.valid_set_y.eval()
-        self.test_set_field = self.test_set_y.eval()
+        train_set_val = self.train_set_y.eval()
+        valid_set_val = self.valid_set_y.eval()
+        test_set_val = self.test_set_y.eval()
         
-        self.train_set_field = T.as_tensor_variable(map(lambda x : int(floor(x / 5)),self.train_set_field))  
-        self.valid_set_field = T.as_tensor_variable(map(lambda x : int(floor(x / 5)),self.valid_set_field))
-        self.test_set_field = T.as_tensor_variable(map(lambda x : int(floor(x / 5)),self.test_set_field))
-    
+        self.train_set_field = T.as_tensor_variable(map(lambda x : int(floor(x / 5)),train_set_val))  
+        self.valid_set_field = T.as_tensor_variable(map(lambda x : int(floor(x / 5)),valid_set_val))
+        self.test_set_field = T.as_tensor_variable(map(lambda x : int(floor(x / 5)),test_set_val))
+        
+        def get_label1(x):
+            if x >= 5:
+                return 0
+            else:
+                return x+1
+        def get_label2(x):
+            if x < 5:
+                return 0
+            else:
+                return x-4
+        
+        self.train_set_y1 = T.as_tensor_variable(map(get_label1,train_set_val))        
+        self.train_set_y2 = T.as_tensor_variable(map(get_label2,train_set_val)) 
+        self.valid_set_y1 = T.as_tensor_variable(map(get_label1,valid_set_val))        
+        self.valid_set_y2 = T.as_tensor_variable(map(get_label2,valid_set_val))
+        self.test_set_y1 = T.as_tensor_variable(map(get_label1,test_set_val))       
+        self.test_set_y2 = T.as_tensor_variable(map(get_label2,test_set_val))
+        
     def make_fun(self):
         # numpy random generator
         numpy_rng = numpy.random.RandomState(123)
@@ -459,9 +483,9 @@ class run_dbn(object):
         # construct the Deep Belief Network
         self.dbn = DBN(numpy_rng=numpy_rng, n_ins=28 * 28,
                        first_layer_size = 500,
-                       hidden_layers_sizes1 = [500,500],
-                        hidden_layers_sizes2 = [500,500],
-                  n_outs1=10,n_outs2=10)
+                       hidden_layers_sizes1 = [500,500,500],
+                        hidden_layers_sizes2 = [500,500,500],
+                  n_outs1=6,n_outs2=6)
                   
         
     
@@ -504,10 +528,13 @@ class run_dbn(object):
         #end_time = time.clock()
 
 
-    def train(self,finetune_lr=0.1,training_epochs=50):
+    def train(self,finetune_lr=0.3,training_epochs=50):
         print '... getting the finetuning functions'
-        self.train_fn1, self.validate_model1, self.test_model1,self.train_fn2, self.validate_model2, self.test_model2 = self.dbn.build_finetune_functions(
-                    datasets=self.datasets, 
+        datas = ((self.train_set_x,self.train_set_y1,self.train_set_y2),
+                 (self.valid_set_x,self.valid_set_y1,self.valid_set_y2),
+                 (self.test_set_x,self.test_set_y1,self.test_set_y2))
+        self.train_fn1, self.validate_model1, self.test_model1,self.train_fn2, self.validate_model2, self.test_model2,self.train_fn_first,self.validate_model_first,self.test_model_first = self.dbn.build_finetune_functions(
+                    datasets=datas, 
                     fields = (self.train_set_field,self.valid_set_field,self.test_set_field),
                     batch_size=self.batch_size,
                     learning_rate=finetune_lr)
@@ -529,9 +556,61 @@ class run_dbn(object):
         best_params2 = None
         best_validation_loss1 = numpy.inf
         best_validation_loss2 = numpy.inf
+        best_validation_loss_first = numpy.inf;
         test_score1 = 0.
         test_score2 = 0.
+        test_score_first = 0.
         start_time = time.clock()
+    
+    
+        done_looping = False
+        epoch = 0
+    
+        #while (epoch < training_epochs) and (not done_looping):
+        while (epoch < training_epochs):
+            epoch = epoch + 1
+            for minibatch_index in xrange(self.n_train_batches):
+                
+                minibatch_avg_cost_first = self.train_fn_first(minibatch_index)
+                
+                iter = (epoch - 1) * self.n_train_batches + minibatch_index
+    
+                if (iter + 1) % validation_frequency == 0:
+    
+                    validation_losses_first = self.validate_model_first()
+                    
+                    this_validation_loss_first = numpy.mean(validation_losses_first)
+                    
+                    print('epoch %i, minibatch %i/%i, validation error %f %%' % \
+                          (epoch, minibatch_index + 1, self.n_train_batches,
+                           this_validation_loss_first * 100.))
+                    
+    
+                    # if we got the best validation score until now
+                    if this_validation_loss_first < best_validation_loss_first:
+    
+                        #improve patience if loss improvement is good enough
+                        if (this_validation_loss_first < best_validation_loss_first *
+                            improvement_threshold):
+                            patience = max(patience, iter * patience_increase)
+    
+                        # save best validation score and iteration number
+                        best_validation_loss_first = this_validation_loss_first
+                        best_iter_first = iter
+    
+                        # test it on the test set
+                        test_losses_first = self.test_model_first()
+                        test_score_first = numpy.mean(test_losses_first)
+                        print(('     epoch %i, minibatch %i/%i, test error of '
+                               'best model %f %%') %
+                              (epoch, minibatch_index + 1, self.n_train_batches,
+                               test_score_first * 100.))
+                """
+                if patience <= iter:
+                    done_looping = True
+                    break    
+                """
+    
     
         done_looping = False
         epoch = 0
@@ -542,20 +621,28 @@ class run_dbn(object):
                 
                 minibatch_avg_cost1 = self.train_fn1(minibatch_index)
                 minibatch_avg_cost2 = self.train_fn2(minibatch_index)
+                minibatch_avg_cost_first = self.train_fn_first(minibatch_index)
+                
                 iter = (epoch - 1) * self.n_train_batches + minibatch_index
-    
                 if (iter + 1) % validation_frequency == 0:
     
                     validation_losses1 = self.validate_model1()
                     validation_losses2 = self.validate_model2()
+                    validation_losses_first = self.validate_model_first()
+                    
                     this_validation_loss1 = numpy.mean(validation_losses1)
                     this_validation_loss2 = numpy.mean(validation_losses2)
-                    print('epoch %i, minibatch %i/%i, validation error %f %%' % \
+                    this_validation_loss_first = numpy.mean(validation_losses_first)
+                    
+                    print('path 1, epoch %i, minibatch %i/%i, validation error %f %%' % \
                           (epoch, minibatch_index + 1, self.n_train_batches,
                            this_validation_loss1 * 100.))
-                    print('epoch %i, minibatch %i/%i, validation error %f %%' % \
+                    print('path 2, epoch %i, minibatch %i/%i, validation error %f %%' % \
                           (epoch, minibatch_index + 1, self.n_train_batches,
                            this_validation_loss2 * 100.))
+                    print('first layer, epoch %i, minibatch %i/%i, validation error %f %%' % \
+                          (epoch, minibatch_index + 1, self.n_train_batches,
+                           this_validation_loss_first * 100.))
     
                     # if we got the best validation score until now
                     if this_validation_loss1 < best_validation_loss1:
@@ -572,7 +659,7 @@ class run_dbn(object):
                         # test it on the test set
                         test_losses1 = self.test_model1()
                         test_score1 = numpy.mean(test_losses1)
-                        print(('     epoch %i, minibatch %i/%i, test error of '
+                        print(('     path 1, epoch %i, minibatch %i/%i, test error of '
                                'best model %f %%') %
                               (epoch, minibatch_index + 1, self.n_train_batches,
                                test_score1 * 100.))
@@ -592,10 +679,30 @@ class run_dbn(object):
                         # test it on the test set
                         test_losses2 = self.test_model2()
                         test_score2 = numpy.mean(test_losses2)
-                        print(('     epoch %i, minibatch %i/%i, test error of '
+                        print(('     path 2, epoch %i, minibatch %i/%i, test error of '
                                'best model %f %%') %
                               (epoch, minibatch_index + 1, self.n_train_batches,
                                test_score2 * 100.))
+                               
+                    # if we got the best validation score until now
+                    if this_validation_loss_first < best_validation_loss_first:
+    
+                        #improve patience if loss improvement is good enough
+                        if (this_validation_loss_first < best_validation_loss_first *
+                            improvement_threshold):
+                            patience = max(patience, iter * patience_increase)
+    
+                        # save best validation score and iteration number
+                        best_validation_loss_first = this_validation_loss_first
+                        best_iter_first = iter
+    
+                        # test it on the test set
+                        test_losses_first = self.test_model_first()
+                        test_score_first = numpy.mean(test_losses_first)
+                        print(('     first layer, epoch %i, minibatch %i/%i, test error of '
+                               'best model %f %%') %
+                              (epoch, minibatch_index + 1, self.n_train_batches,
+                               test_score_first * 100.))
     
                 if patience <= iter:
                     done_looping = True
@@ -766,5 +873,5 @@ if __name__ == '__main__':
     x = run_dbn()
     x.pre_data()
     x.make_fun()
-    x.pre_train()
+    #x.pre_train()
     x.train()
