@@ -482,9 +482,9 @@ class run_dbn(object):
         print '... building the model'
         # construct the Deep Belief Network
         self.dbn = DBN(numpy_rng=numpy_rng, n_ins=28 * 28,
-                       first_layer_size = 500,
-                       hidden_layers_sizes1 = [500,500,500],
-                        hidden_layers_sizes2 = [500,500,500],
+                       first_layer_size = 1000,
+                       hidden_layers_sizes1 = [1000,1000],
+                        hidden_layers_sizes2 = [1000,1000],
                   n_outs1=6,n_outs2=6)
                   
         
@@ -504,7 +504,7 @@ class run_dbn(object):
         print '... pre-training the model'
         #start_time = time.clock()
         ## Pre-train layer-wise
-        for i in xrange(self.dbn.n_layers1):
+        for i in xrange(self.dbn.n_layers1+1):
             # go through pretraining epochs
             for epoch in xrange(pretraining_epochs):
                 # go through the training set
@@ -515,7 +515,7 @@ class run_dbn(object):
                 print 'Pre-training layer %i, epoch %d, cost ' % (i, epoch),
                 print numpy.mean(c)
                 
-        for i in xrange(self.dbn.n_layers2):
+        for i in xrange(self.dbn.n_layers2+1):
             # go through pretraining epochs
             for epoch in xrange(pretraining_epochs):
                 # go through the training set
@@ -528,7 +528,7 @@ class run_dbn(object):
         #end_time = time.clock()
 
 
-    def train(self,finetune_lr=0.3,training_epochs=50):
+    def train(self,finetune_lr=0.1,training_epochs=50):
         print '... getting the finetuning functions'
         datas = ((self.train_set_x,self.train_set_y1,self.train_set_y2),
                  (self.valid_set_x,self.valid_set_y1,self.valid_set_y2),
@@ -567,7 +567,7 @@ class run_dbn(object):
         epoch = 0
     
         #while (epoch < training_epochs) and (not done_looping):
-        while (epoch < training_epochs):
+        while (epoch < training_epochs) and (not done_looping):
             epoch = epoch + 1
             for minibatch_index in xrange(self.n_train_batches):
                 
@@ -605,11 +605,11 @@ class run_dbn(object):
                                'best model %f %%') %
                               (epoch, minibatch_index + 1, self.n_train_batches,
                                test_score_first * 100.))
-                """
+                
                 if patience <= iter:
                     done_looping = True
                     break    
-                """
+                
     
     
         done_looping = False
@@ -621,18 +621,18 @@ class run_dbn(object):
                 
                 minibatch_avg_cost1 = self.train_fn1(minibatch_index)
                 minibatch_avg_cost2 = self.train_fn2(minibatch_index)
-                minibatch_avg_cost_first = self.train_fn_first(minibatch_index)
+                #minibatch_avg_cost_first = self.train_fn_first(minibatch_index)
                 
                 iter = (epoch - 1) * self.n_train_batches + minibatch_index
                 if (iter + 1) % validation_frequency == 0:
     
                     validation_losses1 = self.validate_model1()
                     validation_losses2 = self.validate_model2()
-                    validation_losses_first = self.validate_model_first()
+                    #validation_losses_first = self.validate_model_first()
                     
                     this_validation_loss1 = numpy.mean(validation_losses1)
                     this_validation_loss2 = numpy.mean(validation_losses2)
-                    this_validation_loss_first = numpy.mean(validation_losses_first)
+                    #this_validation_loss_first = numpy.mean(validation_losses_first)
                     
                     print('path 1, epoch %i, minibatch %i/%i, validation error %f %%' % \
                           (epoch, minibatch_index + 1, self.n_train_batches,
@@ -640,9 +640,11 @@ class run_dbn(object):
                     print('path 2, epoch %i, minibatch %i/%i, validation error %f %%' % \
                           (epoch, minibatch_index + 1, self.n_train_batches,
                            this_validation_loss2 * 100.))
+                    """
                     print('first layer, epoch %i, minibatch %i/%i, validation error %f %%' % \
                           (epoch, minibatch_index + 1, self.n_train_batches,
                            this_validation_loss_first * 100.))
+                    """
     
                     # if we got the best validation score until now
                     if this_validation_loss1 < best_validation_loss1:
@@ -683,7 +685,7 @@ class run_dbn(object):
                                'best model %f %%') %
                               (epoch, minibatch_index + 1, self.n_train_batches,
                                test_score2 * 100.))
-                               
+                    """           
                     # if we got the best validation score until now
                     if this_validation_loss_first < best_validation_loss_first:
     
@@ -703,7 +705,7 @@ class run_dbn(object):
                                'best model %f %%') %
                               (epoch, minibatch_index + 1, self.n_train_batches,
                                test_score_first * 100.))
-    
+                    """
                 if patience <= iter:
                     done_looping = True
                     break
