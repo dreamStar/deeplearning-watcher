@@ -873,5 +873,5 @@ if __name__ == '__main__':
     x = run_dbn()
     x.pre_data()
     x.make_fun()
-    #x.pre_train()
+    x.pre_train()
     x.train()
