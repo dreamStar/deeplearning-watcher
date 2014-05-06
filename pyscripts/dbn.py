@@ -130,7 +130,7 @@ class DBN(object):
             # the first layer
             
             if i == 0:
-                layer_input = self.first_sigmoid_layer.output*self.first_logLayer.y_pred.dimshuffle((0,'x'))
+                layer_input = self.first_sigmoid_layer.output*(1-self.first_logLayer.y_pred.dimshuffle((0,'x')))
                 #layer_input = self.first_sigmoid_layer.output
             else:
                 layer_input = self.sigmoid_layers1[-1].output            
@@ -189,7 +189,7 @@ class DBN(object):
             # hidden layer below or the input of the DBN if you are on
             # the first layer
             if i == 0:
-                layer_input = T.mul(self.first_sigmoid_layer.output,(1-self.first_logLayer.y_pred.dimshuffle((0,'x'))))
+                layer_input = T.mul(self.first_sigmoid_layer.output,self.first_logLayer.y_pred.dimshuffle((0,'x')))
             else:
                 layer_input = self.sigmoid_layers2[-1].output
 
@@ -426,10 +426,72 @@ class DBN(object):
             return [test_score_i2(i) for i in xrange(n_test_batches)]
 
         return train_fn1, valid_score1, test_score1,train_fn2,valid_score2,test_score2,train_fn_first,valid_score_first,test_score_first
+
+    def build_pred_functions(self, datasets, batch_size):
+        (train_set_x, train_set_y1,train_set_y2) = datasets[0]
+        (valid_set_x, valid_set_y1,valid_set_y2) = datasets[1]
+        (test_set_x, test_set_y1,test_set_y2) = datasets[2]
+        
+        
+        # compute number of minibatches for training, validation and testing
+        n_valid_batches = valid_set_x.get_value(borrow=True).shape[0]
+        n_valid_batches /= batch_size
+        n_test_batches = test_set_x.get_value(borrow=True).shape[0]
+        n_test_batches /= batch_size
+
+        index = T.lscalar('index')  # index to a [mini]batch
+        
+        train_pred1 = theano.function([index], self.logLayer1.y_pred,
+              givens={
+              self.x: train_set_x[index * batch_size:(index + 1) * batch_size]
+              })  
+              
+        train_pred2 = theano.function([index], self.logLayer2.y_pred,
+              givens={
+              self.x: train_set_x[index * batch_size:(index + 1) * batch_size]
+              }) 
+              
+        valid_pred1 = theano.function([index], self.logLayer1.y_pred,
+              givens={
+              self.x: valid_set_x[index * batch_size:(index + 1) * batch_size]
+              }) 
+              
+        valid_pred2 = theano.function([index], self.logLayer2.y_pred,
+              givens={
+              self.x: valid_set_x[index * batch_size:(index + 1) * batch_size]
+              }) 
+              
+        test_pred1 = theano.function([index], self.logLayer1.y_pred,
+              givens={
+              self.x: test_set_x[index * batch_size:(index + 1) * batch_size]
+              }) 
+              
+        test_pred2 = theano.function([index], self.logLayer2.y_pred,
+              givens={
+              self.x: test_set_x[index * batch_size:(index + 1) * batch_size]
+              })
+              
+        train_pred_first = theano.function([index], self.first_logLayer.y_pred,
+              givens={
+              self.x: train_set_x[index * batch_size:(index + 1) * batch_size]
+              }) 
+              
+        valid_pred_first = theano.function([index], self.first_logLayer.y_pred,
+              givens={
+              self.x: valid_set_x[index * batch_size:(index + 1) * batch_size]
+              }) 
+              
+        test_pred_first = theano.function([index], self.first_logLayer.y_pred,
+              givens={
+              self.x: test_set_x[index * batch_size:(index + 1) * batch_size]
+              }) 
+            
+        return train_pred1,train_pred2,train_pred_first,valid_pred1,valid_pred2,valid_pred_first,test_pred1,test_pred2,test_pred_first
+            
         
 class run_dbn(object):
 
-    def pre_data(self,dataset = r'D:\databases\mnist\mnist.pkl.gz',batch_size = 10):
+    def pre_data(self,dataset = r'D:\databases\mnist\mnist.pkl.gz',batch_size = 10,split = False):
         self.datasets = load_data(dataset)
         self.batch_size = batch_size;
         self.train_set_x, self.train_set_y = self.datasets[0]
@@ -437,18 +499,38 @@ class run_dbn(object):
         self.test_set_x, self.test_set_y = self.datasets[2]
         
         if isdebug:
-            self.train_set_x.set_value(self.train_set_x.get_value()[100:200])
+            self.train_set_x.set_value(self.train_set_x.get_value()[:100])
             #self.train_set_y.set_value(self.train_set_y.get_value()[0:100])
-            self.valid_set_x.set_value(self.valid_set_x.get_value()[100:200])
+            self.valid_set_x.set_value(self.valid_set_x.get_value()[:100])
             #self.valid_set_y.set_value(self.valid_set_y.get_value()[0:100])
-            self.test_set_x.set_value(self.test_set_x.get_value()[100:200])
+            self.test_set_x.set_value(self.test_set_x.get_value()[:100])
             #self.test_set_y.set_value(self.test_set_y.get_value()[0:100])
-            
         self._get_samples_field()
-    
-        # compute number of minibatches for training, validation and testing
+        
+        if split:         
+            self.split_data()
+            
+            self.train_set_x = self.train_set_x_sp1
+            self.train_set_y1 = self.train_set_y_sp1
+            self.train_set_y2 = T.cast(T.ones(self.train_set_y_sp1.shape) * 5,'int32')
+            self.train_set_field = T.cast(T.zeros(self.train_set_y_sp1.shape),'int32')            
+            
+            
+            self.valid_set_x = self.valid_set_x_sp1
+            self.valid_set_y1 = self.valid_set_y_sp1
+            self.valid_set_y2 = T.cast(T.ones(self.valid_set_y_sp1.shape) * 5,'int32')
+            self.valid_set_field = T.cast(T.zeros(self.train_set_y_sp1.shape),'int32')
+            
+            self.test_set_x = self.test_set_x_sp1
+            self.test_set_y1 = self.test_set_y_sp1
+            self.test_set_y2 = T.cast(T.ones(self.test_set_y_sp1.shape) * 5,'int32')
+            self.test_set_field = T.cast(T.zeros(self.train_set_y_sp1.shape),'int32')
+
         self.n_train_batches = self.train_set_x.get_value(borrow=True).shape[0] / batch_size
-    
+        self.datas = ((self.train_set_x,self.train_set_y1,self.train_set_y2),
+                 (self.valid_set_x,self.valid_set_y1,self.valid_set_y2),
+                 (self.test_set_x,self.test_set_y1,self.test_set_y2))
+                 
     def _get_samples_field(self):
         train_set_val = self.train_set_y.eval()
         valid_set_val = self.valid_set_y.eval()
@@ -457,7 +539,7 @@ class run_dbn(object):
         self.train_set_field = T.as_tensor_variable(map(lambda x : int(floor(x / 5)),train_set_val))  
         self.valid_set_field = T.as_tensor_variable(map(lambda x : int(floor(x / 5)),valid_set_val))
         self.test_set_field = T.as_tensor_variable(map(lambda x : int(floor(x / 5)),test_set_val))
-        
+        """
         def get_label1(x):
             if x >= 5:
                 return 0
@@ -468,6 +550,17 @@ class run_dbn(object):
                 return 0
             else:
                 return x-4
+        """
+        def get_label1(x):
+            if x >= 5:
+                return 5
+            else:
+                return x
+        def get_label2(x):
+            if x < 5:
+                return 5
+            else:
+                return x-5        
         
         self.train_set_y1 = T.as_tensor_variable(map(get_label1,train_set_val))        
         self.train_set_y2 = T.as_tensor_variable(map(get_label2,train_set_val)) 
@@ -478,7 +571,7 @@ class run_dbn(object):
         
     def make_fun(self):
         # numpy random generator
-        numpy_rng = numpy.random.RandomState(123)
+        numpy_rng = numpy.random.RandomState(345)
         print '... building the model'
         # construct the Deep Belief Network
         self.dbn = DBN(numpy_rng=numpy_rng, n_ins=28 * 28,
@@ -530,14 +623,15 @@ class run_dbn(object):
 
     def train(self,finetune_lr=0.1,training_epochs=50):
         print '... getting the finetuning functions'
-        datas = ((self.train_set_x,self.train_set_y1,self.train_set_y2),
-                 (self.valid_set_x,self.valid_set_y1,self.valid_set_y2),
-                 (self.test_set_x,self.test_set_y1,self.test_set_y2))
+        
         self.train_fn1, self.validate_model1, self.test_model1,self.train_fn2, self.validate_model2, self.test_model2,self.train_fn_first,self.validate_model_first,self.test_model_first = self.dbn.build_finetune_functions(
-                    datasets=datas, 
+                    datasets=self.datas, 
                     fields = (self.train_set_field,self.valid_set_field,self.test_set_field),
                     batch_size=self.batch_size,
                     learning_rate=finetune_lr)
+        self.train_pred1,self.train_pred2,self.train_pred_first,self.valid_pred1,self.valid_pred2,self.valid_pred_first,self.test_pred1,self.test_pred2,self.test_pred_first = self.dbn.build_pred_functions(
+                    datasets=self.datas,
+                    batch_size = self.batch_size)
     
         print '... finetunning the model'
         # early-stopping parameters
@@ -721,7 +815,48 @@ class run_dbn(object):
                               ' ran for %.2fm' % ((end_time - start_time)
                                                   / 60.))
         """
-
+        
+    def split_data(self):
+        
+        xval = self.train_set_x.eval()
+        yval = self.train_set_y.eval()
+        ty1 = [i for i in range(len(yval)) if yval[i] < 5]
+        ty2 = [i for i in range(len(yval)) if yval[i] >= 5]
+        xtmp1 = numpy.asarray([xval[i] for i in ty1])
+        xtmp2 = numpy.asarray([xval[i] for i in ty2])
+        ytmp1 = numpy.asarray([yval[i] for i in ty1])
+        ytmp2 = numpy.asarray([xval[i] for i in ty2])   
+        self.train_set_x_sp1 = theano.shared(value=xtmp1)
+        self.train_set_x_sp2 = theano.shared(value=xtmp2)
+        self.train_set_y_sp1 = theano.shared(value = ytmp1)
+        self.train_set_y_sp2 = theano.shared(value = ytmp2)        
+          
+        xval = self.valid_set_x.eval()
+        yval = self.valid_set_y.eval()
+        ty1 = [i for i in range(len(yval)) if yval[i] < 5]
+        ty2 = [i for i in range(len(yval)) if yval[i] >= 5]
+        xtmp1 = numpy.asarray([xval[i] for i in ty1])
+        xtmp2 = numpy.asarray([xval[i] for i in ty2])
+        ytmp1 = numpy.asarray([yval[i] for i in ty1])
+        ytmp2 = numpy.asarray([xval[i] for i in ty2])   
+        self.valid_set_x_sp1 = theano.shared(value=xtmp1)
+        self.valid_set_x_sp2 = theano.shared(value=xtmp2)
+        self.valid_set_y_sp1 = theano.shared(value = ytmp1)
+        self.valid_set_y_sp2 = theano.shared(value = ytmp2) 
+        
+        xval = self.test_set_x.eval()
+        yval = self.test_set_y.eval()
+        ty1 = [i for i in range(len(yval)) if yval[i] < 5]
+        ty2 = [i for i in range(len(yval)) if yval[i] >= 5]
+        xtmp1 = numpy.asarray([xval[i] for i in ty1])
+        xtmp2 = numpy.asarray([xval[i] for i in ty2])
+        ytmp1 = numpy.asarray([yval[i] for i in ty1])
+        ytmp2 = numpy.asarray([xval[i] for i in ty2])   
+        self.test_set_x_sp1 = theano.shared(value=xtmp1)
+        self.test_set_x_sp2 = theano.shared(value=xtmp2)
+        self.test_set_y_sp1 = theano.shared(value = ytmp1)
+        self.test_set_y_sp2 = theano.shared(value = ytmp2) 
+        
 def test_DBN(finetune_lr=0.1, pretraining_epochs=50,
              pretrain_lr=0.01, k=1, training_epochs=50,
              dataset='Z:\share\databases\mnist\mnist.pkl.gz', batch_size=10):
@@ -868,12 +1003,13 @@ def test_DBN(finetune_lr=0.1, pretraining_epochs=50,
                           os.path.split(__file__)[1] +
                           ' ran for %.2fm' % ((end_time - start_time)
                                               / 60.))
-
+    
+    
 
 if __name__ == '__main__':
     #test_DBN()
     x = run_dbn()
-    x.pre_data()
+    x.pre_data(split = True)
     x.make_fun()
-    x.pre_train()
-    x.train()
+    #x.pre_train()
+    x.train(training_epochs=1)
