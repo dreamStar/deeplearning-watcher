@@ -12,7 +12,7 @@ import gzip
 import os
 import sys
 import time
-
+import random
 import numpy
 
 import theano
@@ -511,18 +511,24 @@ class run_dbn(object):
         
         ty1 = self.train_set_y1.eval().tolist()
         ty2 = self.train_set_y2.eval().tolist()
-        tz1 = ones(len(ty1)).tolist() * 10
-        tz2 = ones(len(ty2)).tolist() * 10        
+        tz1 = ones(len(ty1))* 10
+        tz2 = ones(len(ty2))* 10
+        tz1 = tz1.tolist()
+        tz2 = tz2.tolist()        
         
         vy1 = self.valid_set_y1.eval().tolist()
         vy2 = self.valid_set_y2.eval().tolist()
-        vz1 = ones(len(vy1)).tolist() * 10
-        vz2 = ones(len(vy2)).tolist() * 10
+        vz1 = ones(len(vy1))* 10
+        vz2 = ones(len(vy2))* 10
+        vz1 = vz1.tolist()
+        vz2 = vz2.tolist()
         
         tey1 = self.test_set_y1.eval().tolist()
         tey2 = self.test_set_y2.eval().tolist()
-        tez1 = ones(len(tey1)).tolist() * 10
-        tez2 = ones(len(tey2)).tolist() * 10
+        tez1 = ones(len(tey1))* 10
+        tez2 = ones(len(tey2))* 10
+        tez1 = tez1.tolist()
+        tez2 = tez2.tolist()
         
         self.train_set_y1 = ty1+tz2
         self.train_set_y2 = tz1+ty2
@@ -552,26 +558,19 @@ class run_dbn(object):
         self.train_set_x,self.train_set_y1,self.train_set_y2,self.train_set_field = shuffle_set(self.train_set_x,self.train_set_y1,self.train_set_y2,self.train_set_field)
         self.valid_set_x,self.valid_set_y1,self.valid_set_y2,self.valid_set_field = shuffle_set(self.valid_set_x,self.valid_set_y1,self.valid_set_y2,self.valid_set_field)
         self.test_set_x,self.test_set_y1,self.test_set_y2,self.test_set_field = shuffle_set(self.test_set_x,self.test_set_y1,self.test_set_y2,self.test_set_field)        
-       
-        def _tondarray(datas,matrix = False):
-            if matrix:
-                datas = np.asmatrix(datas)
-            else:
-                datas = np.asarray(datas,'int32')
-                
-        _tondarray(self.train_set_x,True)
-        _tondarray(self.valid_set_x,True)
-        _tondarray(self.test_set_x,True)
-        _tondarray(self.train_set_y1)        
-        _tondarray(self.train_set_y2) 
-        _tondarray(self.valid_set_y1) 
-        _tondarray(self.valid_set_y2) 
-        _tondarray(self.test_set_y1) 
-        _tondarray(self.test_set_y2) 
-        _tondarray(self.train_set_field) 
-        _tondarray(self.valid_set_field) 
-        _tondarray(self.test_set_field) 
         
+        self.train_set_x = theano.shared(numpy.asmatrix(self.train_set_x))
+        self.valid_set_x = theano.shared(numpy.asmatrix(self.valid_set_x))
+        self.test_set_x = theano.shared(numpy.asmatrix(self.test_set_x))
+        self.train_set_y1 = theano.shared(numpy.asarray(self.train_set_y1,'int32'))        
+        self.train_set_y2 = theano.shared(numpy.asarray(self.train_set_y2,'int32')) 
+        self.valid_set_y1 = theano.shared(numpy.asarray(self.valid_set_y1,'int32')) 
+        self.valid_set_y2 = theano.shared(numpy.asarray(self.valid_set_y2,'int32'))
+        self.test_set_y1 = theano.shared(numpy.asarray(self.test_set_y1,'int32'))
+        self.test_set_y2 = theano.shared(numpy.asarray(self.test_set_y2,'int32'))  
+        self.train_set_field = theano.shared(numpy.asarray(self.train_set_field,'int32'))  
+        self.valid_set_field = theano.shared(numpy.asarray(self.valid_set_field,'int32'))  
+        self.test_set_field = theano.shared(numpy.asarray(self.test_set_field,'int32'))  
         
         
         if isdebug:
@@ -669,7 +668,7 @@ class run_dbn(object):
         self.test_set_y1 = T.as_tensor_variable(map(get_label1,test_set_val))       
         self.test_set_y2 = T.as_tensor_variable(map(get_label2,test_set_val))
         
-    def make_fun(self):
+    def make_fun(self, k=1,finetune_lr=0.1):
         # numpy random generator
         numpy_rng = numpy.random.RandomState(345)
         print '... building the model'
@@ -678,52 +677,19 @@ class run_dbn(object):
                        first_layer_size = 1000,
                        hidden_layers_sizes1 = [1000,1000],
                         hidden_layers_sizes2 = [1000,1000],
-                  n_outs1=6,n_outs2=6)
-                  
+                  n_outs1=11,n_outs2=11)
         
-    
-    def pre_train(self,pretraining_epochs = 50,
-                 pretrain_lr=0.01, k=1):
         print '... getting the pretraining functions'
-        pretraining_fns1 = self.dbn.pretraining_functions(train_set_x=self.train_set_x,
+        self.pretraining_fns1 = self.dbn.pretraining_functions(train_set_x=self.train_set_x,
                                                           train_set_field = self.train_set_field,
                                                     batch_size=self.batch_size,
                                                     k=k,field = 1)
-        pretraining_fns2 = self.dbn.pretraining_functions(train_set_x=self.train_set_x,
+        self.pretraining_fns2 = self.dbn.pretraining_functions(train_set_x=self.train_set_x,
                                                           train_set_field = self.train_set_field,
                                                     batch_size=self.batch_size,
                                                     k=k,field = 2)
-    
-        print '... pre-training the model'
-        #start_time = time.clock()
-        ## Pre-train layer-wise
-        for i in xrange(self.dbn.n_layers1+1):
-            # go through pretraining epochs
-            for epoch in xrange(pretraining_epochs):
-                # go through the training set
-                c = []
-                for batch_index in xrange(self.n_train_batches):
-                    c.append(pretraining_fns1[i](index=batch_index,
-                                                lr=pretrain_lr))
-                print 'Pre-training layer %i, epoch %d, cost ' % (i, epoch),
-                print numpy.mean(c)
-                
-        for i in xrange(self.dbn.n_layers2+1):
-            # go through pretraining epochs
-            for epoch in xrange(pretraining_epochs):
-                # go through the training set
-                c = []
-                for batch_index in xrange(self.n_train_batches):
-                    c.append(pretraining_fns2[i](index=batch_index,
-                                                lr=pretrain_lr))
-                print 'Pre-training layer %i, epoch %d, cost ' % (i, epoch),
-                print numpy.mean(c)
-        #end_time = time.clock()
 
-
-    def train(self,finetune_lr=0.1,training_epochs=50):
-        print '... getting the finetuning functions'
-        
+        print '... getting the finetuning functions'  
         self.train_fn1, self.validate_model1, self.test_model1,self.train_fn2, self.validate_model2, self.test_model2,self.train_fn_first,self.validate_model_first,self.test_model_first = self.dbn.build_finetune_functions(
                     datasets=self.datas, 
                     fields = (self.train_set_field,self.valid_set_field,self.test_set_field),
@@ -733,7 +699,39 @@ class run_dbn(object):
                     datasets=self.datas,
                     batch_size = self.batch_size)
     
-        print '... finetunning the model'
+    def pre_train(self,pretraining_epochs = 50,pretrain_lr=0.01):
+        
+    
+        print '... pre-training the model'
+        #start_time = time.clock()
+        ## Pre-train layer-wise
+        for i in xrange(self.dbn.n_layers1+1):
+            # go through pretraining epochs
+            if i == 0:continue
+            for epoch in xrange(pretraining_epochs):
+                # go through the training set
+                c = []
+                for batch_index in xrange(self.n_train_batches):
+                    c.append(self.pretraining_fns1[i](index=batch_index,
+                                                lr=pretrain_lr))
+                print 'Pre-training layer %i, epoch %d, cost ' % (i, epoch),
+                print numpy.mean(c)
+                
+        for i in xrange(self.dbn.n_layers2+1):
+            # go through pretraining epochs
+            if i == 0:continue
+            for epoch in xrange(pretraining_epochs):
+                # go through the training set
+                c = []
+                for batch_index in xrange(self.n_train_batches):
+                    c.append(self.pretraining_fns2[i](index=batch_index,
+                                                lr=pretrain_lr))
+                print 'Pre-training layer %i, epoch %d, cost ' % (i, epoch),
+                print numpy.mean(c)
+        #end_time = time.clock()
+
+    def train_first(self,finetune_lr=0.1,training_epochs=50):
+        print '...training the first layer'
         # early-stopping parameters
         patience = 4 * self.n_train_batches  # look as this many examples regardless
         patience_increase = 2.    # wait this much longer when a new best is
@@ -745,21 +743,10 @@ class run_dbn(object):
                                       # minibatche before checking the network
                                       # on the validation set; in this case we
                                       # check every epoch
-    
-        best_params1 = None
-        best_params2 = None
-        best_validation_loss1 = numpy.inf
-        best_validation_loss2 = numpy.inf
-        best_validation_loss_first = numpy.inf;
-        test_score1 = 0.
-        test_score2 = 0.
         test_score_first = 0.
-        start_time = time.clock()
-    
-    
+        best_validation_loss_first = numpy.inf;
         done_looping = False
         epoch = 0
-    
         #while (epoch < training_epochs) and (not done_looping):
         while (epoch < training_epochs) and (not done_looping):
             epoch = epoch + 1
@@ -802,10 +789,29 @@ class run_dbn(object):
                 
                 if patience <= iter:
                     done_looping = True
-                    break    
+                    break   
                 
+    def train(self,training_epochs=50):
+        print '... finetunning the model'
+        # early-stopping parameters
+        patience = 4 * self.n_train_batches  # look as this many examples regardless
+        patience_increase = 2.    # wait this much longer when a new best is
+                                  # found
+        improvement_threshold = 0.995  # a relative improvement of this much is
+                                       # considered significant
+        validation_frequency = min(self.n_train_batches, patience / 2)
+                                      # go through this many
+                                      # minibatche before checking the network
+                                      # on the validation set; in this case we
+                                      # check every epoch
     
-    
+        best_params1 = None
+        best_params2 = None
+        best_validation_loss1 = numpy.inf
+        best_validation_loss2 = numpy.inf     
+        test_score1 = 0.
+        test_score2 = 0.      
+        start_time = time.clock()
         done_looping = False
         epoch = 0
     
@@ -957,160 +963,68 @@ class run_dbn(object):
         self.test_set_y_sp1 = theano.shared(value = ytmp1)
         self.test_set_y_sp2 = theano.shared(value = ytmp2) 
         
-def test_DBN(finetune_lr=0.1, pretraining_epochs=50,
-             pretrain_lr=0.01, k=1, training_epochs=50,
-             dataset='Z:\share\databases\mnist\mnist.pkl.gz', batch_size=10):
-    """
-    Demonstrates how to train and test a Deep Belief Network.
+        
+    def get_precise_recall(self):
+        self.tf1 = [[0,0] for i in range(11)]
+        self.tf2 = [[0,0] for i in range(11)]
+        batch_num = (self.test_set_y1.shape[0] / self.batch_size).eval()
+        def _get_pred(pred,batch_num):
+            ret = []
+            for i in range(batch_num):
+                ret = ret + pred(i).tolist()
+            return ret
+        l1 = _get_pred(self.test_pred1,batch_num)
+        l2 = _get_pred(self.test_pred2,batch_num)
+        
+        def _get_static(ret,label,tf):
+            l = len(ret)
+            for i in range(l):
+                if ret[i] == label[i]:
+                    tf[ret[i]][0] = tf[ret[i]][0] + 1 # TP
+                else:
+                    tf[ret[i]][1] = tf[ret[i]][1] + 1 # FP
+        _get_static(l1,self.test_set_y1.eval().tolist(),self.tf1) 
+        _get_static(l2,self.test_set_y2.eval().tolist(),self.tf2) 
 
-    This is demonstrated on MNIST.
+        typesum1 = [0] * 11
+        typesum2 = [0] * 11
+        def _get_sum(typesum,label):
+            for i in label:
+                typesum[i] = typesum[i] + 1
+        _get_sum(typesum1,self.test_set_y1.eval().tolist())                   
+        _get_sum(typesum2,self.test_set_y2.eval().tolist())  
 
-    :type learning_rate: float
-    :param learning_rate: learning rate used in the finetune stage
-    :type pretraining_epochs: int
-    :param pretraining_epochs: number of epoch to do pretraining
-    :type pretrain_lr: float
-    :param pretrain_lr: learning rate to be used during pre-training
-    :type k: int
-    :param k: number of Gibbs steps in CD/PCD
-    :type training_epochs: int
-    :param training_epochs: maximal number of iterations ot run the optimizer
-    :type dataset: string
-    :param dataset: path the the pickled dataset
-    :type batch_size: int
-    :param batch_size: the size of a minibatch
-    """
-
-    datasets = load_data(dataset)
-
-    train_set_x, train_set_y = datasets[0]
-    valid_set_x, valid_set_y = datasets[1]
-    test_set_x, test_set_y = datasets[2]
-
-    # compute number of minibatches for training, validation and testing
-    n_train_batches = train_set_x.get_value(borrow=True).shape[0] / batch_size
-
-    # numpy random generator
-    numpy_rng = numpy.random.RandomState(123)
-    print '... building the model'
-    # construct the Deep Belief Network
-    dbn = DBN(numpy_rng=numpy_rng, n_ins=28 * 28,
-              hidden_layers_sizes=[1000, 1000, 1000],
-              n_outs=10)
-
-    #########################
-    # PRETRAINING THE MODEL #
-    #########################
-    print '... getting the pretraining functions'
-    pretraining_fns = dbn.pretraining_functions(train_set_x=train_set_x,
-                                                batch_size=batch_size,
-                                                k=k)
-
-    print '... pre-training the model'
-    start_time = time.clock()
-    ## Pre-train layer-wise
-    for i in xrange(dbn.n_layers):
-        # go through pretraining epochs
-        for epoch in xrange(pretraining_epochs):
-            # go through the training set
-            c = []
-            for batch_index in xrange(n_train_batches):
-                c.append(pretraining_fns[i](index=batch_index,
-                                            lr=pretrain_lr))
-            print 'Pre-training layer %i, epoch %d, cost ' % (i, epoch),
-            print numpy.mean(c)
-
-    end_time = time.clock()
-    print >> sys.stderr, ('The pretraining code for file ' +
-                          os.path.split(__file__)[1] +
-                          ' ran for %.2fm' % ((end_time - start_time) / 60.))
-
-    ########################
-    # FINETUNING THE MODEL #
-    ########################
-
-    # get the training, validation and testing function for the model
-    print '... getting the finetuning functions'
-    train_fn, validate_model, test_model = dbn.build_finetune_functions(
-                datasets=datasets, batch_size=batch_size,
-                learning_rate=finetune_lr)
-
-    print '... finetunning the model'
-    # early-stopping parameters
-    patience = 4 * n_train_batches  # look as this many examples regardless
-    patience_increase = 2.    # wait this much longer when a new best is
-                              # found
-    improvement_threshold = 0.995  # a relative improvement of this much is
-                                   # considered significant
-    validation_frequency = min(n_train_batches, patience / 2)
-                                  # go through this many
-                                  # minibatche before checking the network
-                                  # on the validation set; in this case we
-                                  # check every epoch
-
-    best_params = None
-    best_validation_loss = numpy.inf
-    test_score = 0.
-    start_time = time.clock()
-
-    done_looping = False
-    epoch = 0
-
-    while (epoch < training_epochs) and (not done_looping):
-        epoch = epoch + 1
-        for minibatch_index in xrange(n_train_batches):
-
-            minibatch_avg_cost = train_fn(minibatch_index)
-            iter = (epoch - 1) * n_train_batches + minibatch_index
-
-            if (iter + 1) % validation_frequency == 0:
-
-                validation_losses = validate_model()
-                this_validation_loss = numpy.mean(validation_losses)
-                print('epoch %i, minibatch %i/%i, validation error %f %%' % \
-                      (epoch, minibatch_index + 1, n_train_batches,
-                       this_validation_loss * 100.))
-
-                # if we got the best validation score until now
-                if this_validation_loss < best_validation_loss:
-
-                    #improve patience if loss improvement is good enough
-                    if (this_validation_loss < best_validation_loss *
-                        improvement_threshold):
-                        patience = max(patience, iter * patience_increase)
-
-                    # save best validation score and iteration number
-                    best_validation_loss = this_validation_loss
-                    best_iter = iter
-
-                    # test it on the test set
-                    test_losses = test_model()
-                    test_score = numpy.mean(test_losses)
-                    print(('     epoch %i, minibatch %i/%i, test error of '
-                           'best model %f %%') %
-                          (epoch, minibatch_index + 1, n_train_batches,
-                           test_score * 100.))
-
-            if patience <= iter:
-                done_looping = True
-                break
-
-    end_time = time.clock()
-    print(('Optimization complete with best validation score of %f %%,'
-           'with test performance %f %%') %
-                 (best_validation_loss * 100., test_score * 100.))
-    print >> sys.stderr, ('The fine tuning code for file ' +
-                          os.path.split(__file__)[1] +
-                          ' ran for %.2fm' % ((end_time - start_time)
-                                              / 60.))
-    
-    
+        self.precise1 = [0] * 11
+        self.recall1 = [0] * 11
+        for i in range(len(self.tf1)):
+            if (self.tf1[i][0] + self.tf1[i][1]) == 0:
+                self.precise1 = 0
+            else :
+                self.precise1[i] =  float(self.tf1[i][0]) / (self.tf1[i][0] + self.tf1[i][1])
+            if typesum1[i] == 0:
+                self.recall1 = 0
+            else :
+                self.recall1[i] =  float(self.tf1[i][0]) / typesum1[i]
+        self.precise2 = [0] * 11
+        self.recall2 = [0] * 11
+        for i in range(len(self.tf2)):
+            if (self.tf2[i][0] + self.tf2[i][1]) == 0:
+                self.precise2 = 0
+            else :
+                self.precise2[i] =  float(self.tf2[i][0]) / (self.tf2[i][0] + self.tf2[i][1])
+            if typesum2[i] == 0:
+                self.recall2 = 0
+            else :
+                self.recall2[i] =  float(self.tf2[i][0]) / typesum2[i]          
+            
 
 if __name__ == '__main__':
     #test_DBN()
     x = run_dbn()
     x.pre_data(dataset1 = r'./mnist.pkl.gz',dataset2 = r'./datas.pickle',batch_size = 5)    
     #x.pre_data(split = True)
-    #x.make_fun()
+    x.make_fun()
+    #x.train_first()
     #x.pre_train()
     #x.train(training_epochs=1)
+    x.get_precise_recall()
