@@ -998,22 +998,22 @@ class run_dbn(object):
         self.recall1 = [0] * 11
         for i in range(len(self.tf1)):
             if (self.tf1[i][0] + self.tf1[i][1]) == 0:
-                self.precise1 = 0
+                self.precise1[i] = 0
             else :
                 self.precise1[i] =  float(self.tf1[i][0]) / (self.tf1[i][0] + self.tf1[i][1])
             if typesum1[i] == 0:
-                self.recall1 = 0
+                self.recall1[i] = 0
             else :
                 self.recall1[i] =  float(self.tf1[i][0]) / typesum1[i]
         self.precise2 = [0] * 11
         self.recall2 = [0] * 11
         for i in range(len(self.tf2)):
             if (self.tf2[i][0] + self.tf2[i][1]) == 0:
-                self.precise2 = 0
+                self.precise2[i] = 0
             else :
                 self.precise2[i] =  float(self.tf2[i][0]) / (self.tf2[i][0] + self.tf2[i][1])
             if typesum2[i] == 0:
-                self.recall2 = 0
+                self.recall2[i] = 0
             else :
                 self.recall2[i] =  float(self.tf2[i][0]) / typesum2[i]          
             
