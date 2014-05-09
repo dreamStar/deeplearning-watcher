@@ -491,6 +491,106 @@ class DBN(object):
         
 class run_dbn(object):
 
+    def pre_data(self,dataset1 = r'./mnist.pkl.gz',dataset2 = r'./datas.pickle',batch_size = 5):
+        self.datasets1 = load_data(dataset1)
+        self.datasets2 = load_data(dataset2)
+        self.batch_size = batch_size;
+        
+        self.train_set_x1, self.train_set_y1 = self.datasets1[0]
+        self.valid_set_x1, self.valid_set_y1 = self.datasets1[1]
+        self.test_set_x1, self.test_set_y1 = self.datasets1[2]
+        
+        self.train_set_x2,self.train_set_y2 = self.datasets2[0]
+        self.valid_set_x2,self.valid_set_y2 = self.datasets2[1]
+        self.test_set_x2,self.test_set_y2 = self.datasets2[2]
+    
+        self.train_set_x = self.train_set_x1.eval().tolist() + self.train_set_x2.eval().tolist()
+        self.valid_set_x = self.valid_set_x1.eval().tolist() + self.valid_set_x2.eval().tolist() 
+        self.test_set_x = self.test_set_x1.eval().tolist() + self.test_set_x2.eval().tolist() 
+        
+        
+        ty1 = self.train_set_y1.eval().tolist()
+        ty2 = self.train_set_y2.eval().tolist()
+        tz1 = ones(len(ty1)).tolist() * 10
+        tz2 = ones(len(ty2)).tolist() * 10        
+        
+        vy1 = self.valid_set_y1.eval().tolist()
+        vy2 = self.valid_set_y2.eval().tolist()
+        vz1 = ones(len(vy1)).tolist() * 10
+        vz2 = ones(len(vy2)).tolist() * 10
+        
+        tey1 = self.test_set_y1.eval().tolist()
+        tey2 = self.test_set_y2.eval().tolist()
+        tez1 = ones(len(tey1)).tolist() * 10
+        tez2 = ones(len(tey2)).tolist() * 10
+        
+        self.train_set_y1 = ty1+tz2
+        self.train_set_y2 = tz1+ty2
+        self.valid_set_y1 = vy1+vz2
+        self.valid_set_y2 = vz1+vy2
+        self.test_set_y1 = tey1+tez2
+        self.test_set_y2 = tez1+tey2
+        
+        self.train_set_field = [0]*len(ty1) + [1]*len(ty2)
+        self.valid_set_field = [0]*len(vy1) + [1]*len(vy2)
+        self.test_set_field = [0]*len(tey1) + [1]*len(tey2)
+        
+        def shuffle_set(datas,labels1,labels2,field):
+            l = range(len(labels1))
+            random.shuffle(l)
+            tmpdata = []
+            tmplab1 = []
+            tmplab2 = []
+            tmpfield = []
+            for i in l:
+                tmpdata.append(datas[i])
+                tmplab1.append(labels1[i])
+                tmplab2.append(labels2[i])
+                tmpfield.append(field[i])
+            return tmpdata,tmplab1,tmplab2,tmpfield
+            
+        self.train_set_x,self.train_set_y1,self.train_set_y2,self.train_set_field = shuffle_set(self.train_set_x,self.train_set_y1,self.train_set_y2,self.train_set_field)
+        self.valid_set_x,self.valid_set_y1,self.valid_set_y2,self.valid_set_field = shuffle_set(self.valid_set_x,self.valid_set_y1,self.valid_set_y2,self.valid_set_field)
+        self.test_set_x,self.test_set_y1,self.test_set_y2,self.test_set_field = shuffle_set(self.test_set_x,self.test_set_y1,self.test_set_y2,self.test_set_field)        
+       
+        def _tondarray(datas,matrix = False):
+            if matrix:
+                datas = np.asmatrix(datas)
+            else:
+                datas = np.asarray(datas,'int32')
+                
+        _tondarray(self.train_set_x,True)
+        _tondarray(self.valid_set_x,True)
+        _tondarray(self.test_set_x,True)
+        _tondarray(self.train_set_y1)        
+        _tondarray(self.train_set_y2) 
+        _tondarray(self.valid_set_y1) 
+        _tondarray(self.valid_set_y2) 
+        _tondarray(self.test_set_y1) 
+        _tondarray(self.test_set_y2) 
+        _tondarray(self.train_set_field) 
+        _tondarray(self.valid_set_field) 
+        _tondarray(self.test_set_field) 
+        
+        
+        
+        if isdebug:
+            self.train_set_x.set_value(self.train_set_x.get_value()[:100])
+            #self.train_set_y.set_value(self.train_set_y.get_value()[0:100])
+            self.valid_set_x.set_value(self.valid_set_x.get_value()[:100])
+            #self.valid_set_y.set_value(self.valid_set_y.get_value()[0:100])
+            self.test_set_x.set_value(self.test_set_x.get_value()[:100])
+            #self.test_set_y.set_value(self.test_set_y.get_value()[0:100])
+        
+        
+        
+
+        self.n_train_batches = self.train_set_x.get_value(borrow=True).shape[0] / batch_size
+        self.datas = ((self.train_set_x,self.train_set_y1,self.train_set_y2),
+                 (self.valid_set_x,self.valid_set_y1,self.valid_set_y2),
+                 (self.test_set_x,self.test_set_y1,self.test_set_y2))
+    """
+    以下函数用于单个数据集时
     def pre_data(self,dataset = r'D:\databases\mnist\mnist.pkl.gz',batch_size = 10,split = False):
         self.datasets = load_data(dataset)
         self.batch_size = batch_size;
@@ -530,7 +630,7 @@ class run_dbn(object):
         self.datas = ((self.train_set_x,self.train_set_y1,self.train_set_y2),
                  (self.valid_set_x,self.valid_set_y1,self.valid_set_y2),
                  (self.test_set_x,self.test_set_y1,self.test_set_y2))
-                 
+    """             
     def _get_samples_field(self):
         train_set_val = self.train_set_y.eval()
         valid_set_val = self.valid_set_y.eval()
@@ -1009,7 +1109,8 @@ def test_DBN(finetune_lr=0.1, pretraining_epochs=50,
 if __name__ == '__main__':
     #test_DBN()
     x = run_dbn()
-    x.pre_data(split = True)
-    x.make_fun()
+    x.pre_data(dataset1 = r'./mnist.pkl.gz',dataset2 = r'./datas.pickle',batch_size = 5)    
+    #x.pre_data(split = True)
+    #x.make_fun()
     #x.pre_train()
-    x.train(training_epochs=1)
+    #x.train(training_epochs=1)

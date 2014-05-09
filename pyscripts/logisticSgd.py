@@ -44,6 +44,7 @@ __docformat__ = 'restructedtext en'
 
 import cPickle
 import gzip
+import pickle
 import os
 import sys
 import time
@@ -174,9 +175,14 @@ def load_data(dataset):
     print '... loading data'
 
     # Load the dataset
-    f = gzip.open(dataset, 'rb')
-    train_set, valid_set, test_set = cPickle.load(f)
-    f.close()
+    if(dataset[-2:] == "gz"):
+        f = gzip.open(dataset, 'rb')
+        train_set, valid_set, test_set = cPickle.load(f)
+        f.close()
+    else:
+        with open(dataset,'rb') as f:
+            train_set, valid_set, test_set = pickle.load(f)
+        
     #train_set, valid_set, test_set format: tuple(input, target)
     #input is an numpy.ndarray of 2 dimensions (a matrix)
     #witch row's correspond to an example. target is a
