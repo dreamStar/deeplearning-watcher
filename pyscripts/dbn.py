@@ -69,7 +69,8 @@ class DBN(object):
         self.n_layers1 = len(hidden_layers_sizes1)
         self.n_layers2 = len(hidden_layers_sizes2) 
         self.first_sigmoid_layer = 0
-
+        self.n_outs1 = n_outs1
+        self.n_outs2 = n_outs2
         assert self.n_layers1 > 0 or self.n_layers2 > 0
 
         # allocate symbolic variables for the data
@@ -491,7 +492,7 @@ class DBN(object):
         
 class run_dbn(object):
 
-    def pre_data(self,dataset1 = r'./mnist.pkl.gz',dataset2 = r'./datas.pickle',batch_size = 5):
+    def pre_data(self,dataset1 = r'./mnist.pkl.gz',dataset2 = r'./datas.pickle',batch_size = 5,typesum1 = 10,typesum2 = 10):
         self.datasets1 = load_data(dataset1)
         self.datasets2 = load_data(dataset2)
         self.batch_size = batch_size;
@@ -511,22 +512,22 @@ class run_dbn(object):
         
         ty1 = self.train_set_y1.eval().tolist()
         ty2 = self.train_set_y2.eval().tolist()
-        tz1 = ones(len(ty1))* 10
-        tz2 = ones(len(ty2))* 10
+        tz1 = ones(len(ty1))* typesum2
+        tz2 = ones(len(ty2))* typesum1
         tz1 = tz1.tolist()
         tz2 = tz2.tolist()        
         
         vy1 = self.valid_set_y1.eval().tolist()
         vy2 = self.valid_set_y2.eval().tolist()
-        vz1 = ones(len(vy1))* 10
-        vz2 = ones(len(vy2))* 10
+        vz1 = ones(len(vy1))* typesum2
+        vz2 = ones(len(vy2))* typesum1
         vz1 = vz1.tolist()
         vz2 = vz2.tolist()
         
         tey1 = self.test_set_y1.eval().tolist()
         tey2 = self.test_set_y2.eval().tolist()
-        tez1 = ones(len(tey1))* 10
-        tez2 = ones(len(tey2))* 10
+        tez1 = ones(len(tey1))* typesum2
+        tez2 = ones(len(tey2))* typesum1
         tez1 = tez1.tolist()
         tez2 = tez2.tolist()
         
@@ -668,16 +669,16 @@ class run_dbn(object):
         self.test_set_y1 = T.as_tensor_variable(map(get_label1,test_set_val))       
         self.test_set_y2 = T.as_tensor_variable(map(get_label2,test_set_val))
         
-    def make_fun(self, k=1,finetune_lr=0.1):
+    def make_fun(self, k=1,finetune_lr=0.1,typesum1=10,typesum2=10,layer_size_f = 1000,layer_size1 = [1000,1000],layer_size2=[1000,1000]):
         # numpy random generator
         numpy_rng = numpy.random.RandomState(345)
         print '... building the model'
         # construct the Deep Belief Network
         self.dbn = DBN(numpy_rng=numpy_rng, n_ins=28 * 28,
-                       first_layer_size = 1000,
-                       hidden_layers_sizes1 = [1000,1000],
-                        hidden_layers_sizes2 = [1000,1000],
-                  n_outs1=11,n_outs2=11)
+                       first_layer_size = layer_size_f,
+                       hidden_layers_sizes1 = layer_size1,
+                        hidden_layers_sizes2 = layer_size2,
+                  n_outs1=typesum1+1,n_outs2=typesum2+1)
         
         print '... getting the pretraining functions'
         self.pretraining_fns1 = self.dbn.pretraining_functions(train_set_x=self.train_set_x,
@@ -811,7 +812,7 @@ class run_dbn(object):
         best_validation_loss2 = numpy.inf     
         test_score1 = 0.
         test_score2 = 0.      
-        start_time = time.clock()
+        self.start_time = time.clock()
         done_looping = False
         epoch = 0
     
@@ -909,7 +910,12 @@ class run_dbn(object):
                 if patience <= iter:
                     done_looping = True
                     break
-        end_time = time.clock()
+            self.get_precise_recall()
+            print "precise 1:",self.precise1
+            print "recall 1:",self.recall1
+            print "precise 2:",self.precise2
+            print "recall 2:",self.recall2
+        self.end_time = time.clock()
         """
         print(('Optimization complete with best validation score of %f %%,'
                'with test performance %f %%') %
@@ -965,8 +971,10 @@ class run_dbn(object):
         
         
     def get_precise_recall(self):
-        self.tf1 = [[0,0] for i in range(11)]
-        self.tf2 = [[0,0] for i in range(11)]
+        out_num1 = self.dbn.n_outs1
+        out_num2 = self.dbn.n_outs2
+        self.tf1 = [[0,0] for i in range(out_num1)]
+        self.tf2 = [[0,0] for i in range(out_num2)]
         batch_num = (self.test_set_y1.shape[0] / self.batch_size).eval()
         def _get_pred(pred,batch_num):
             ret = []
@@ -986,16 +994,16 @@ class run_dbn(object):
         _get_static(l1,self.test_set_y1.eval().tolist(),self.tf1) 
         _get_static(l2,self.test_set_y2.eval().tolist(),self.tf2) 
 
-        typesum1 = [0] * 11
-        typesum2 = [0] * 11
+        typesum1 = [0] * (out_num1)
+        typesum2 = [0] * (out_num2)
         def _get_sum(typesum,label):
             for i in label:
                 typesum[i] = typesum[i] + 1
         _get_sum(typesum1,self.test_set_y1.eval().tolist())                   
         _get_sum(typesum2,self.test_set_y2.eval().tolist())  
 
-        self.precise1 = [0] * 11
-        self.recall1 = [0] * 11
+        self.precise1 = [0] * (out_num1) 
+        self.recall1 = [0] * (out_num1)
         for i in range(len(self.tf1)):
             if (self.tf1[i][0] + self.tf1[i][1]) == 0:
                 self.precise1[i] = 0
@@ -1005,8 +1013,8 @@ class run_dbn(object):
                 self.recall1[i] = 0
             else :
                 self.recall1[i] =  float(self.tf1[i][0]) / typesum1[i]
-        self.precise2 = [0] * 11
-        self.recall2 = [0] * 11
+        self.precise2 = [0] * (out_num2)
+        self.recall2 = [0] * (out_num2)
         for i in range(len(self.tf2)):
             if (self.tf2[i][0] + self.tf2[i][1]) == 0:
                 self.precise2[i] = 0
@@ -1021,10 +1029,10 @@ class run_dbn(object):
 if __name__ == '__main__':
     #test_DBN()
     x = run_dbn()
-    x.pre_data(dataset1 = r'./mnist.pkl.gz',dataset2 = r'./datas.pickle',batch_size = 5)    
+    x.pre_data(dataset1 = r'./mnist.pkl.gz',dataset2 = r'./datas_coil_100.pkl',batch_size = 5,typesum1 = 10,typesum2 = 100)    
     #x.pre_data(split = True)
-    x.make_fun()
-    #x.train_first()
+    x.make_fun(typesum1=10,typesum2=100,layer_size2 = [5000,5000])
+    x.train_first(training_epochs=1)
     #x.pre_train()
-    #x.train(training_epochs=1)
+    x.train(training_epochs=10)
     x.get_precise_recall()

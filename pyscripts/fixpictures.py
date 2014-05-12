@@ -90,7 +90,8 @@ class Process_datasets:
 class Process_coil(Process_datasets):
     def __init__(self,srcdir,size = (28,28),dstdir = r'./datas.pickle'):
         self.initial(srcdir,size,dstdir)
-        self.numlist = [4,5,7,10,29,30,34,36,40,58]
+        #self.numlist = [4,5,7,10,29,30,34,36,40,58]
+        self.numlist = [x+1 for x in range(100)]
         
     def read_all_data(self):
         
